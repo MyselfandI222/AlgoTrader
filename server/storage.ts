@@ -21,7 +21,10 @@ export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
+  updateUser(id: string, user: Partial<User>): Promise<User | undefined>;
   updateUserBalance(userId: string, balance: string): Promise<User | undefined>;
+  changePassword(userId: string, newPassword: string): Promise<boolean>;
+  deleteUser(userId: string): Promise<boolean>;
 
   // Portfolios
   getPortfolio(id: string): Promise<Portfolio | undefined>;
@@ -110,6 +113,12 @@ export class MemStorage implements IStorage {
       ...insertUser, 
       id,
       balance: insertUser.balance || "0.00",
+      name: insertUser.name || null,
+      bio: insertUser.bio || null,
+      avatar: insertUser.avatar || null,
+      emailNotifications: insertUser.emailNotifications !== undefined ? insertUser.emailNotifications : true,
+      pushNotifications: insertUser.pushNotifications !== undefined ? insertUser.pushNotifications : true,
+      twoFactorEnabled: insertUser.twoFactorEnabled !== undefined ? insertUser.twoFactorEnabled : false,
       createdAt: new Date(),
     };
     this.users.set(id, user);
@@ -125,6 +134,15 @@ export class MemStorage implements IStorage {
     return user;
   }
 
+  async updateUser(id: string, userUpdate: Partial<User>): Promise<User | undefined> {
+    const user = this.users.get(id);
+    if (!user) return undefined;
+
+    const updatedUser = { ...user, ...userUpdate };
+    this.users.set(id, updatedUser);
+    return updatedUser;
+  }
+
   async updateUserBalance(userId: string, balance: string): Promise<User | undefined> {
     const user = this.users.get(userId);
     if (!user) return undefined;
@@ -132,6 +150,43 @@ export class MemStorage implements IStorage {
     const updatedUser = { ...user, balance };
     this.users.set(userId, updatedUser);
     return updatedUser;
+  }
+
+  async changePassword(userId: string, newPassword: string): Promise<boolean> {
+    const user = this.users.get(userId);
+    if (!user) return false;
+
+    const updatedUser = { ...user, password: newPassword };
+    this.users.set(userId, updatedUser);
+    return true;
+  }
+
+  async deleteUser(userId: string): Promise<boolean> {
+    // Also delete related data
+    const portfolio = await this.getPortfolioByUserId(userId);
+    if (portfolio) {
+      // Delete positions
+      const positions = await this.getPositions(portfolio.id);
+      positions.forEach(pos => this.positions.delete(pos.id));
+      
+      // Delete trades
+      const trades = await this.getTrades(portfolio.id);
+      trades.forEach(trade => this.trades.delete(trade.id));
+      
+      // Delete strategies
+      const strategies = await this.getStrategies(portfolio.id);
+      strategies.forEach(strategy => this.strategies.delete(strategy.id));
+      
+      // Delete portfolio
+      this.portfolios.delete(portfolio.id);
+    }
+    
+    // Delete transactions
+    const transactions = await this.getTransactions(userId);
+    transactions.forEach(transaction => this.transactions.delete(transaction.id));
+    
+    // Delete user
+    return this.users.delete(userId);
   }
 
   // Portfolios

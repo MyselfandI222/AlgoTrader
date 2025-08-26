@@ -8,6 +8,12 @@ export const users = pgTable("users", {
   username: text("username").notNull().unique(),
   email: text("email").notNull().unique(),
   password: text("password").notNull(),
+  name: text("name"),
+  bio: text("bio"),
+  avatar: text("avatar"),
+  emailNotifications: boolean("email_notifications").notNull().default(true),
+  pushNotifications: boolean("push_notifications").notNull().default(true),
+  twoFactorEnabled: boolean("two_factor_enabled").notNull().default(false),
   balance: decimal("balance", { precision: 15, scale: 2 }).notNull().default("0.00"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
@@ -84,6 +90,27 @@ export const transactions = pgTable("transactions", {
 export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
   createdAt: true,
+});
+
+export const updateProfileSchema = createInsertSchema(users).pick({
+  name: true,
+  username: true,
+  bio: true,
+  avatar: true,
+}).partial();
+
+export const updateNotificationsSchema = createInsertSchema(users).pick({
+  emailNotifications: true,
+  pushNotifications: true,
+}).partial();
+
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1, "Current password is required"),
+  newPassword: z.string().min(6, "Password must be at least 6 characters"),
+  confirmPassword: z.string().min(1, "Please confirm your password"),
+}).refine((data) => data.newPassword === data.confirmPassword, {
+  message: "Passwords do not match",
+  path: ["confirmPassword"],
 });
 
 export const insertPortfolioSchema = createInsertSchema(portfolios).omit({

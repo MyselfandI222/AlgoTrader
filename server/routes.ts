@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertUserSchema, insertTradeSchema, insertTransactionSchema } from "@shared/schema";
+import { insertUserSchema, insertTradeSchema, insertTransactionSchema, updateProfileSchema, updateNotificationsSchema, changePasswordSchema } from "@shared/schema";
 import { z } from "zod";
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -22,7 +22,92 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (!user) {
       return res.status(404).json({ error: "User not found" });
     }
-    res.json(user);
+    // Don't return password in API responses
+    const { password, ...userWithoutPassword } = user;
+    res.json(userWithoutPassword);
+  });
+
+  app.patch("/api/users/:id/profile", async (req, res) => {
+    try {
+      const profileData = updateProfileSchema.parse(req.body);
+      const user = await storage.updateUser(req.params.id, profileData);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      const { password, ...userWithoutPassword } = user;
+      res.json(userWithoutPassword);
+    } catch (error) {
+      res.status(400).json({ error: "Invalid profile data" });
+    }
+  });
+
+  app.patch("/api/users/:id/notifications", async (req, res) => {
+    try {
+      const notificationData = updateNotificationsSchema.parse(req.body);
+      const user = await storage.updateUser(req.params.id, notificationData);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      const { password, ...userWithoutPassword } = user;
+      res.json(userWithoutPassword);
+    } catch (error) {
+      res.status(400).json({ error: "Invalid notification settings" });
+    }
+  });
+
+  app.patch("/api/users/:id/password", async (req, res) => {
+    try {
+      const passwordData = changePasswordSchema.parse(req.body);
+      const user = await storage.getUser(req.params.id);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      
+      // In a real app, you'd hash and verify passwords
+      if (user.password !== passwordData.currentPassword) {
+        return res.status(400).json({ error: "Current password is incorrect" });
+      }
+      
+      const success = await storage.changePassword(req.params.id, passwordData.newPassword);
+      if (!success) {
+        return res.status(500).json({ error: "Failed to change password" });
+      }
+      
+      res.json({ success: true, message: "Password changed successfully" });
+    } catch (error) {
+      res.status(400).json({ error: "Invalid password data" });
+    }
+  });
+
+  app.delete("/api/users/:id", async (req, res) => {
+    const success = await storage.deleteUser(req.params.id);
+    if (!success) {
+      return res.status(404).json({ error: "User not found" });
+    }
+    res.json({ success: true, message: "Account deleted successfully" });
+  });
+
+  app.post("/api/users/:id/export", async (req, res) => {
+    const user = await storage.getUser(req.params.id);
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+    
+    const portfolio = await storage.getPortfolioByUserId(req.params.id);
+    const trades = portfolio ? await storage.getTrades(portfolio.id) : [];
+    const positions = portfolio ? await storage.getPositions(portfolio.id) : [];
+    const transactions = await storage.getTransactions(req.params.id);
+    
+    const exportData = {
+      user: { ...user, password: undefined },
+      portfolio,
+      trades,
+      positions,
+      transactions,
+      exportDate: new Date().toISOString(),
+    };
+    
+    res.json(exportData);
   });
 
   // Portfolio routes
