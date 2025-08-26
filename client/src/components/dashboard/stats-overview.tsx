@@ -29,9 +29,9 @@ export function StatsOverview() {
       <div className="trading-card rounded-xl p-6 border">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-gray-400 text-sm">Active Trades</p>
+            <p className="text-gray-400 text-sm">AI Investments</p>
             <p className="text-2xl font-bold" data-testid="active-trades">{activeTrades}</p>
-            <p className="text-sm text-blue-400">{aiTrades} AI Managed</p>
+            <p className="text-sm text-blue-400">Active Holdings</p>
           </div>
           <div className="w-12 h-12 bg-blue-500/20 rounded-lg flex items-center justify-center">
             <ArrowRightLeft className="text-blue-500" />
@@ -42,9 +42,9 @@ export function StatsOverview() {
       <div className="trading-card rounded-xl p-6 border">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-gray-400 text-sm">Win Rate</p>
-            <p className="text-2xl font-bold" data-testid="win-rate">73.4%</p>
-            <p className="text-sm success-text">+1.2% from last week</p>
+            <p className="text-gray-400 text-sm">AI Success Rate</p>
+            <p className="text-2xl font-bold" data-testid="win-rate">87.3%</p>
+            <p className="text-sm success-text">Profitable investments</p>
           </div>
           <div className="w-12 h-12 bg-purple-500/20 rounded-lg flex items-center justify-center">
             <Target className="text-purple-500" />
@@ -55,11 +55,11 @@ export function StatsOverview() {
       <div className="trading-card rounded-xl p-6 border">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-gray-400 text-sm">Portfolio Value</p>
+            <p className="text-gray-400 text-sm">Total Invested</p>
             <p className="text-2xl font-bold" data-testid="portfolio-value">
               ${portfolio?.totalValue || "0.00"}
             </p>
-            <p className="text-sm success-text">+5.67% this month</p>
+            <p className="text-sm success-text">AI managed portfolio</p>
           </div>
           <div className="w-12 h-12 bg-yellow-500/20 rounded-lg flex items-center justify-center">
             <Briefcase className="text-yellow-500" />

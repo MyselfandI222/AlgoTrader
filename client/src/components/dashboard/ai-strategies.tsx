@@ -6,7 +6,7 @@ export function AIStrategies() {
 
   return (
     <div className="trading-card rounded-xl p-6 border" data-testid="ai-strategies">
-      <h3 className="text-xl font-bold mb-6">AI Trading Strategies</h3>
+      <h3 className="text-xl font-bold mb-6">AI Investment Strategies</h3>
       
       <div className="space-y-4">
         {strategies?.map((strategy) => (
@@ -45,7 +45,7 @@ export function AIStrategies() {
         className="w-full mt-4 bg-blue-600 hover:bg-blue-700"
         data-testid="button-configure-strategies"
       >
-        Configure Strategies
+        Adjust AI Settings
       </Button>
     </div>
   );

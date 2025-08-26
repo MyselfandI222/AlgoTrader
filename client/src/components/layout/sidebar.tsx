@@ -13,11 +13,11 @@ import { cn } from "@/lib/utils";
 
 const navigation = [
   { name: "Dashboard", href: "/", icon: Activity },
-  { name: "Portfolio", href: "/portfolio", icon: Briefcase },
-  { name: "Trading", href: "/trading", icon: ArrowRightLeft },
+  { name: "My Investments", href: "/portfolio", icon: Briefcase },
+  { name: "AI Holdings", href: "/trading", icon: ArrowRightLeft },
   { name: "AI Strategies", href: "/strategies", icon: Bot },
-  { name: "Analytics", href: "/analytics", icon: BarChart3 },
-  { name: "Trade History", href: "/history", icon: History },
+  { name: "Performance", href: "/analytics", icon: BarChart3 },
+  { name: "Investment History", href: "/history", icon: History },
   { name: "Account", href: "/account", icon: Settings },
 ];
 
@@ -32,8 +32,8 @@ export function Sidebar() {
             <TrendingUp className="text-white" size={20} />
           </div>
           <div>
-            <h1 className="text-xl font-bold">AutoTrade Pro</h1>
-            <p className="text-gray-400 text-sm">AI Trading Platform</p>
+            <h1 className="text-xl font-bold">AutoInvest AI</h1>
+            <p className="text-gray-400 text-sm">AI Investment Manager</p>
           </div>
         </div>
       </div>
@@ -72,7 +72,7 @@ export function Sidebar() {
               <span className="text-sm success-text">Active</span>
             </div>
           </div>
-          <p className="text-xs text-gray-400">Automated trading strategies running</p>
+          <p className="text-xs text-gray-400">AI actively managing your investments</p>
         </div>
       </nav>
     </aside>

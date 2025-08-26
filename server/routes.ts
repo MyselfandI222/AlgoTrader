@@ -163,63 +163,91 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(500).json({ error: "Failed to create portfolio" });
       }
 
-      // Create demo strategies
+      // Create AI investment strategies
       await storage.createStrategy({
         portfolioId: portfolio.id,
-        name: "Momentum Scalper",
-        description: "High-frequency strategy",
-        riskAllocation: "15.00",
+        name: "AI Growth Portfolio",
+        description: "Diversified growth stocks with AI analysis",
+        riskAllocation: "45.00",
         isActive: true,
-        totalPnl: "847.00",
+        totalPnl: "3247.89",
       });
 
       await storage.createStrategy({
         portfolioId: portfolio.id,
-        name: "Mean Reversion",
-        description: "Conservative approach",
-        riskAllocation: "35.00",
+        name: "AI Tech Focus",
+        description: "Technology sector concentration",
+        riskAllocation: "30.00",
         isActive: true,
-        totalPnl: "1243.00",
+        totalPnl: "1876.23",
       });
 
       await storage.createStrategy({
         portfolioId: portfolio.id,
-        name: "Trend Following",
-        description: "Medium-term strategy",
+        name: "AI Conservative",
+        description: "Low-risk diversified holdings",
         riskAllocation: "25.00",
-        isActive: false,
-        totalPnl: "567.00",
+        isActive: true,
+        totalPnl: "654.77",
       });
 
-      // Create demo trades
-      const stocks = ['AAPL', 'TSLA', 'NVDA', 'MSFT'];
-      for (let i = 0; i < 10; i++) {
-        const symbol = stocks[Math.floor(Math.random() * stocks.length)];
-        const side = Math.random() > 0.5 ? 'BUY' : 'SELL';
-        const quantity = (Math.random() * 100 + 10).toFixed(2);
-        const marketData = await storage.getMarketData(symbol);
-        const price = marketData?.price || "100.00";
-        const amount = (parseFloat(quantity) * parseFloat(price)).toFixed(2);
-        const pnl = (Math.random() * 1000 - 500).toFixed(2);
+      // Create AI investment positions
+      const aiHoldings = [
+        { symbol: 'AAPL', quantity: '150.00', avgPrice: '170.23' },
+        { symbol: 'NVDA', quantity: '75.00', avgPrice: '885.67' },
+        { symbol: 'MSFT', quantity: '125.00', avgPrice: '408.92' },
+        { symbol: 'TSLA', quantity: '50.00', avgPrice: '252.45' },
+        { symbol: 'GOOGL', quantity: '80.00', avgPrice: '169.12' },
+        { symbol: 'AMZN', quantity: '60.00', avgPrice: '176.33' },
+      ];
 
+      for (const holding of aiHoldings) {
+        const marketData = await storage.getMarketData(holding.symbol);
+        const currentPrice = parseFloat(marketData?.price || holding.avgPrice);
+        const avgPrice = parseFloat(holding.avgPrice);
+        const quantity = parseFloat(holding.quantity);
+        const marketValue = (currentPrice * quantity).toFixed(2);
+        const unrealizedPnl = ((currentPrice - avgPrice) * quantity).toFixed(2);
+        const unrealizedPnlPercent = (((currentPrice - avgPrice) / avgPrice) * 100).toFixed(2);
+
+        // Create the position
+        await storage.createPosition({
+          portfolioId: portfolio.id,
+          symbol: holding.symbol,
+          quantity: holding.quantity,
+          averagePrice: holding.avgPrice,
+          currentPrice: currentPrice.toFixed(2),
+          marketValue,
+          unrealizedPnl,
+          unrealizedPnlPercent,
+        });
+
+        // Create the initial AI buy trade
         await storage.createTrade({
           portfolioId: portfolio.id,
-          symbol,
-          side,
-          quantity,
-          price,
-          amount,
-          pnl,
-          isAutomatic: Math.random() > 0.3,
-          strategyName: Math.random() > 0.3 ? "Momentum Scalper" : undefined,
+          symbol: holding.symbol,
+          side: 'BUY',
+          quantity: holding.quantity,
+          price: holding.avgPrice,
+          amount: (avgPrice * quantity).toFixed(2),
+          pnl: unrealizedPnl,
+          isAutomatic: true,
+          strategyName: 'AI Growth Portfolio',
         });
       }
 
-      // Update portfolio values
+      // Calculate and update portfolio values based on AI investments
+      const positions = await storage.getPositions(portfolio.id);
+      const totalInvested = positions.reduce((sum, pos) => sum + parseFloat(pos.marketValue), 0);
+      const totalPnl = positions.reduce((sum, pos) => sum + parseFloat(pos.unrealizedPnl), 0);
+      const cashBalance = parseFloat(demoUser.balance) - totalInvested;
+      const totalValue = totalInvested + cashBalance;
+      const dailyPnlPercent = totalInvested > 0 ? ((totalPnl / totalInvested) * 100).toFixed(2) : "0.00";
+
       await storage.updatePortfolio(portfolio.id, {
-        totalValue: "127543.89",
-        dailyPnl: "2847.65",
-        dailyPnlPercent: "2.29",
+        totalValue: totalValue.toFixed(2),
+        dailyPnl: totalPnl.toFixed(2),
+        dailyPnlPercent,
       });
 
       res.json({ user: demoUser, portfolio });

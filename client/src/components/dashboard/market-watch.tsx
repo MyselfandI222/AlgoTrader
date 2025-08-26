@@ -16,7 +16,7 @@ export function MarketWatch() {
           <Button 
             variant="ghost" 
             className="text-blue-400 hover:text-blue-300 text-sm p-0"
-            onClick={refreshMarketData}
+            onClick={() => refreshMarketData()}
             data-testid="button-refresh-market"
           >
             <RefreshCw className="mr-1" size={14} />

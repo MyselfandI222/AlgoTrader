@@ -15,16 +15,16 @@ export function TopBar() {
       <header className="trading-card border-b px-6 py-4" data-testid="topbar">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-2xl font-bold">Dashboard</h2>
+            <h2 className="text-2xl font-bold">AI Investment Dashboard</h2>
             <p className="text-gray-400">
-              Welcome back, <span data-testid="user-name">{user?.username || "Trader"}</span>
+              Your AI is actively investing, <span data-testid="user-name">{user?.username || "Investor"}</span>
             </p>
           </div>
           
           <div className="flex items-center space-x-4">
             <div className="flex items-center space-x-3 trading-accent rounded-lg px-4 py-2">
               <div className="text-right">
-                <p className="text-sm text-gray-400">Account Balance</p>
+                <p className="text-sm text-gray-400">Available Cash</p>
                 <p className="font-bold text-lg" data-testid="account-balance">
                   ${user?.balance || "0.00"}
                 </p>

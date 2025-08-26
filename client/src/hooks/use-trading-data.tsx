@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useEffect, useState } from "react";
-import type { User, Portfolio, Trade, Strategy, MarketData, Transaction } from "@shared/schema";
+import type { User, Portfolio, Trade, Strategy, MarketData, Transaction, Position } from "@shared/schema";
 
 const DEMO_USER_ID = "demo-user-123";
 
@@ -52,6 +52,12 @@ export function useTradingData() {
     enabled: !!portfolio?.id,
   });
 
+  // Fetch positions
+  const { data: positions } = useQuery<Position[]>({
+    queryKey: ["/api/positions/portfolio", portfolio?.id],
+    enabled: !!portfolio?.id,
+  });
+
   // Fetch market data
   const { data: marketData, refetch: refetchMarketData } = useQuery<MarketData[]>({
     queryKey: ["/api/market"],
@@ -78,6 +84,7 @@ export function useTradingData() {
     portfolio,
     trades,
     strategies,
+    positions,
     marketData,
     createTransaction: createTransactionMutation.mutateAsync,
     refreshMarketData: refetchMarketData,

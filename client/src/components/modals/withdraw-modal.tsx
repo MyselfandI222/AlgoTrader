@@ -51,6 +51,7 @@ export function WithdrawModal({ open, onOpenChange }: WithdrawModalProps) {
         amount,
         method,
         status: "COMPLETED",
+        userId: "demo-user-123",
       });
 
       toast({

@@ -39,11 +39,12 @@ export function DepositModal({ open, onOpenChange }: DepositModalProps) {
         amount,
         method,
         status: "COMPLETED",
+        userId: "demo-user-123",
       });
 
       toast({
         title: "Deposit Successful",
-        description: `$${amount} has been added to your account`,
+        description: `$${amount} deposited. AI will start investing shortly.`,
       });
 
       setAmount("");

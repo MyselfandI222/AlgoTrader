@@ -8,7 +8,7 @@ export function RecentTrades() {
   return (
     <div className="trading-card rounded-xl p-6 border" data-testid="recent-trades">
       <div className="flex items-center justify-between mb-6">
-        <h3 className="text-xl font-bold">Recent Trades</h3>
+        <h3 className="text-xl font-bold">Recent AI Investments</h3>
         <Button variant="ghost" className="text-blue-400 hover:text-blue-300 text-sm" data-testid="button-view-all-trades">
           View All
         </Button>
@@ -30,8 +30,8 @@ export function RecentTrades() {
                 <td className="py-3">
                   <div>
                     <span className="font-semibold">{trade.symbol}</span>
-                    <span className="text-gray-400 text-sm block">
-                      {trade.isAutomatic ? 'AI Trade' : 'Manual'}
+                    <span className="text-blue-400 text-sm block">
+                      🤖 AI Investment
                     </span>
                   </div>
                 </td>

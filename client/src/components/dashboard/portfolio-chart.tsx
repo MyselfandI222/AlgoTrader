@@ -21,7 +21,7 @@ export function PortfolioChart() {
   return (
     <div className="trading-card rounded-xl p-6 border" data-testid="portfolio-chart">
       <div className="flex items-center justify-between mb-6">
-        <h3 className="text-xl font-bold">Portfolio Performance</h3>
+        <h3 className="text-xl font-bold">AI Investment Performance</h3>
         <div className="flex space-x-2">
           <Button size="sm" className="bg-blue-600 text-white" data-testid="chart-1d">1D</Button>
           <Button size="sm" variant="ghost" className="text-gray-400 hover:text-white" data-testid="chart-1w">1W</Button>
