@@ -1,8 +1,10 @@
 import { Button } from "@/components/ui/button";
 import { useTradingData } from "@/hooks/use-trading-data";
+import { useLocation } from "wouter";
 
 export function AIStrategies() {
   const { strategies } = useTradingData();
+  const [, setLocation] = useLocation();
 
   return (
     <div className="trading-card rounded-xl p-6 border" data-testid="ai-strategies">
@@ -43,6 +45,7 @@ export function AIStrategies() {
       
       <Button 
         className="w-full mt-4 bg-blue-600 hover:bg-blue-700"
+        onClick={() => setLocation("/strategies")}
         data-testid="button-configure-strategies"
       >
         Adjust AI Settings
