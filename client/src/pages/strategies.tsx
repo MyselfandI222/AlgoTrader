@@ -4,15 +4,21 @@ import { TopBar } from "@/components/layout/topbar";
 import { StrategyOverview } from "@/components/strategies/strategy-overview";
 import { StrategyList } from "@/components/strategies/strategy-list";
 import { RiskManagement } from "@/components/strategies/risk-management";
+import { AdvancedStrategyConfig } from "@/components/strategies/advanced-strategy-config";
+import { AlgorithmEngine } from "@/components/strategies/algorithm-engine";
+import { BacktestingLab } from "@/components/strategies/backtesting-lab";
 import { Button } from "@/components/ui/button";
-import { Brain, Shield, BarChart3 } from "lucide-react";
+import { Brain, Shield, BarChart3, Activity, Target } from "lucide-react";
 
 export default function Strategies() {
-  const [activeTab, setActiveTab] = useState<"overview" | "strategies" | "risk">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "strategies" | "risk" | "engine" | "backtest" | "config">("overview");
+  const [selectedStrategy, setSelectedStrategy] = useState<{ id: string; name: string } | null>(null);
 
   const tabs = [
     { id: "overview" as const, label: "Overview", icon: BarChart3 },
     { id: "strategies" as const, label: "AI Strategies", icon: Brain },
+    { id: "engine" as const, label: "Algorithm Engine", icon: Activity },
+    { id: "backtest" as const, label: "Backtesting Lab", icon: Target },
     { id: "risk" as const, label: "Risk Management", icon: Shield },
   ];
 
@@ -55,7 +61,16 @@ export default function Strategies() {
             {/* Tab Content */}
             {activeTab === "overview" && <StrategyOverview />}
             {activeTab === "strategies" && <StrategyList />}
+            {activeTab === "engine" && <AlgorithmEngine />}
+            {activeTab === "backtest" && <BacktestingLab />}
             {activeTab === "risk" && <RiskManagement />}
+            {selectedStrategy && (
+              <AdvancedStrategyConfig 
+                strategyId={selectedStrategy.id}
+                strategyName={selectedStrategy.name}
+                onClose={() => setSelectedStrategy(null)}
+              />
+            )}
           </div>
         </div>
       </main>

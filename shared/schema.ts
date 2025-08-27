@@ -143,6 +143,82 @@ export const insertTransactionSchema = createInsertSchema(transactions).omit({
   createdAt: true,
 });
 
+// Advanced Strategy Configuration Schema
+export const strategyConfigSchema = z.object({
+  // General Settings
+  isActive: z.boolean().default(true),
+  riskAllocation: z.number().min(1).max(50),
+  maxPositionSize: z.number().min(1).max(15),
+  
+  // Technical Indicators
+  rsi: z.object({
+    enabled: z.boolean(),
+    period: z.number().min(5).max(30),
+    overbought: z.number().min(65).max(85),
+    oversold: z.number().min(15).max(35)
+  }),
+  
+  macd: z.object({
+    enabled: z.boolean(),
+    fastPeriod: z.number().min(8).max(20),
+    slowPeriod: z.number().min(20).max(35),
+    signalPeriod: z.number().min(5).max(15)
+  }),
+  
+  bollinger: z.object({
+    enabled: z.boolean(),
+    period: z.number().min(10).max(30),
+    stdDev: z.number().min(1).max(3)
+  }),
+  
+  movingAverages: z.object({
+    sma: z.object({
+      enabled: z.boolean(),
+      period: z.number().min(10).max(200)
+    }),
+    ema: z.object({
+      enabled: z.boolean(),
+      period: z.number().min(5).max(100)
+    })
+  }),
+  
+  // Risk Management
+  stopLoss: z.object({
+    enabled: z.boolean(),
+    percentage: z.number().min(3).max(20),
+    trailing: z.boolean()
+  }),
+  
+  takeProfit: z.object({
+    enabled: z.boolean(),
+    percentage: z.number().min(5).max(50),
+    partial: z.boolean()
+  }),
+  
+  // Market Conditions
+  marketFilters: z.object({
+    volatilityFilter: z.boolean(),
+    volumeFilter: z.boolean(),
+    trendFilter: z.boolean()
+  }),
+  
+  // Machine Learning
+  machineLearning: z.object({
+    enabled: z.boolean(),
+    modelConfidence: z.number().min(50).max(95),
+    ensembleVoting: z.boolean(),
+    featureEngineering: z.boolean()
+  }),
+  
+  // News & Sentiment
+  sentiment: z.object({
+    enabled: z.boolean(),
+    newsWeight: z.number().min(0.1).max(0.6),
+    socialWeight: z.number().min(0.1).max(0.4),
+    analystWeight: z.number().min(0.1).max(0.5)
+  })
+});
+
 // Types
 export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -164,3 +240,5 @@ export type InsertMarketData = z.infer<typeof insertMarketDataSchema>;
 
 export type Transaction = typeof transactions.$inferSelect;
 export type InsertTransaction = z.infer<typeof insertTransactionSchema>;
+
+export type StrategyConfig = z.infer<typeof strategyConfigSchema>;

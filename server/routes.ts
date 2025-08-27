@@ -2,6 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { insertUserSchema, insertTradeSchema, insertTransactionSchema, updateProfileSchema, updateNotificationsSchema, changePasswordSchema } from "@shared/schema";
+import { createStrategyRoutes } from "./routes/strategy-routes.js";
 import { z } from "zod";
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -340,6 +341,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ error: "Failed to initialize demo data" });
     }
   });
+
+  // Register strategy routes
+  app.use(createStrategyRoutes(storage));
 
   const httpServer = createServer(app);
   return httpServer;
