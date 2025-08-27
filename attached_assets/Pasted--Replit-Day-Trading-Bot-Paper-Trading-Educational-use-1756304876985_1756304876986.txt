@@ -1,0 +1,450 @@
+"""
+Replit Day Trading Bot (Paper Trading)
+=====================================
+
+⚠️ Educational use only. This script demonstrates how to scan intraday metrics that are often used by day traders (RVOL, gap %, VWAP relationship, opening range breakout, spread %, ATR%) and, when multiple signals align, automatically places *paper* trades on Alpaca with bracket orders (stop-loss + take-profit).
+
+You are responsible for any usage. Use Alpaca's PAPER endpoint for safety.
+
+Quick Start (on Replit)
+-----------------------
+1) Create a new Replit (Python).
+2) Add the following secrets (Replit → Tools → Secrets):
+   - ALPACA_API_KEY
+   - ALPACA_SECRET
+   - ALPACA_BASE_URL = https://paper-api.alpaca.markets  (paper trading)
+   - DATA_FEED = iex   (free realtime w/ Alpaca; or "sip" if you have it)
+3) (Optional) WATCHLIST: comma-separated symbols you want to scan (e.g. "SPY,QQQ,TSLA,NVDA,AMD,SMCI,MARA,SOXL"). If omitted, we'll default to a liquid universe.
+4) Press Run.
+
+Main Ideas
+----------
+- **Screen**: liquidity, price>5, spread<0.5%, RVOL>1.5, gap% in range, above VWAP, 15-min Opening Range Breakout (ORB), volume surge.
+- **Risk**: risk per trade = 0.5% of equity (configurable). Stop at max( VWAP - k*ATR, recent swing), Take-profit at 2R.
+- **Controls**: max concurrent positions, cooldown per symbol, trading window, and global daily loss stop.
+
+Dependencies
+------------
+- alpaca-py
+- pandas, numpy
+
+"""
+from __future__ import annotations
+import os
+import time
+import math
+import asyncio
+from datetime import datetime, timedelta, timezone
+from dataclasses import dataclass
+from typing import List, Dict, Optional, Tuple
+
+import numpy as np
+import pandas as pd
+
+from alpaca.trading.client import TradingClient
+from alpaca.trading.enums import OrderSide, TimeInForce
+from alpaca.trading.requests import MarketOrderRequest, BracketOrderRequest
+from alpaca.trading.models import Position
+from alpaca.common.enums import BaseURL
+from alpaca.data.historical import StockHistoricalDataClient
+from alpaca.data.requests import StockBarsRequest, StockQuotesRequest, StockLatestQuoteRequest, StockSnapshotsRequest
+from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
+
+# ---------------------- Configuration ----------------------
+ALPACA_API_KEY = os.getenv("ALPACA_API_KEY", "")
+ALPACA_SECRET = os.getenv("ALPACA_SECRET", "")
+ALPACA_BASE_URL = os.getenv("ALPACA_BASE_URL", "https://paper-api.alpaca.markets")
+DATA_FEED = os.getenv("DATA_FEED", "iex")  # "iex" (free) or "sip" (paid)
+
+# Universe: Use env WATCHLIST or default list of liquid names
+DEFAULT_UNIVERSE = [
+    "SPY","QQQ","TSLA","NVDA","AAPL","AMD","META","AMZN","MSFT","SMCI",
+    "NFLX","GOOGL","COIN","MU","INTC","AVGO","BIDU","BABA","PLTR","NIO",
+    "RIVN","NVDS","SOXL","TQQQ","SQQQ","IWM","XLF","XLE","XBI","BA"
+]
+WATCHLIST = [s.strip().upper() for s in os.getenv("WATCHLIST", ",".join(DEFAULT_UNIVERSE)).split(",") if s.strip()]
+
+# Trading parameters
+RISK_PER_TRADE = float(os.getenv("RISK_PER_TRADE", 0.005))  # 0.5% of equity
+MAX_CONCURRENT_POS = int(os.getenv("MAX_CONCURRENT_POS", 3))
+COOLDOWN_MINUTES = int(os.getenv("COOLDOWN_MINUTES", 30))
+MIN_PRICE = float(os.getenv("MIN_PRICE", 5.0))
+MAX_SPREAD_PCT = float(os.getenv("MAX_SPREAD_PCT", 0.005))  # 0.5%
+MIN_RVOL = float(os.getenv("MIN_RVOL", 1.5))
+GAP_MIN = float(os.getenv("GAP_MIN", 0.01))   # +1%
+GAP_MAX = float(os.getenv("GAP_MAX", 0.10))   # +10%
+ATR_DAYS = int(os.getenv("ATR_DAYS", 14))
+VWAP_K = float(os.getenv("VWAP_K", 0.75))     # stop offset multiplier of ATR from VWAP
+TAKE_PROFIT_R = float(os.getenv("TAKE_PROFIT_R", 2.0))
+POLL_SEC = int(os.getenv("POLL_SEC", 20))
+OPENING_RANGE_MIN = int(os.getenv("OPENING_RANGE_MIN", 15))
+MARKET_TZ = timezone(timedelta(hours=-4))  # Assuming America/New_York during EDT
+TRADING_START = os.getenv("TRADING_START", "09:35")  # start after first 5m
+TRADING_END = os.getenv("TRADING_END", "15:55")      # close out before 16:00
+DAILY_MAX_LOSS = float(os.getenv("DAILY_MAX_LOSS", 0.03))  # 3% of equity stop
+
+# -----------------------------------------------------------
+
+@dataclass
+class Signal:
+    symbol: str
+    reason: List[str]
+    entry: float
+    stop: float
+    take_profit: float
+
+@dataclass
+class Cache:
+    last_trade_time: Dict[str, datetime]
+    opening_range: Dict[str, Tuple[float, float]]  # (high, low) for first N minutes
+
+cache = Cache(last_trade_time={}, opening_range={})
+
+
+def parse_hhmm(s: str) -> Tuple[int, int]:
+    hh, mm = [int(x) for x in s.split(":")]
+    return hh, mm
+
+
+def in_trading_window(now: datetime) -> bool:
+    hh_s, mm_s = parse_hhmm(TRADING_START)
+    hh_e, mm_e = parse_hhmm(TRADING_END)
+    start = now.replace(hour=hh_s, minute=mm_s, second=0, microsecond=0)
+    end = now.replace(hour=hh_e, minute=mm_e, second=0, microsecond=0)
+    return start <= now <= end
+
+
+# ---------------------- Alpaca Clients ----------------------
+trading_client = TradingClient(ALPACA_API_KEY, ALPACA_SECRET, paper=("paper" in ALPACA_BASE_URL))
+md_client = StockHistoricalDataClient(ALPACA_API_KEY, ALPACA_SECRET)
+
+
+# ---------------------- Utilities ----------------------
+
+def get_account_equity() -> float:
+    acct = trading_client.get_account()
+    return float(acct.equity)
+
+
+def get_positions_map() -> Dict[str, Position]:
+    positions = trading_client.get_all_positions()
+    return {p.symbol: p for p in positions}
+
+
+def atr_from_daily(symbol: str, days: int = ATR_DAYS) -> Optional[float]:
+    end = datetime.now(tz=timezone.utc)
+    start = end - timedelta(days=days*2)  # buffer for market days
+    req = StockBarsRequest(symbol_or_symbols=symbol, timeframe=TimeFrame.Day, start=start, end=end, feed=DATA_FEED)
+    bars = md_client.get_stock_bars(req)
+    if symbol not in bars or len(bars[symbol]) < days+1:
+        return None
+    df = pd.DataFrame([{
+        't': b.timestamp,
+        'o': b.open,
+        'h': b.high,
+        'l': b.low,
+        'c': b.close,
+        'v': b.volume
+    } for b in bars[symbol]])
+    df.sort_values('t', inplace=True)
+    df['prev_c'] = df['c'].shift(1)
+    tr = np.maximum(df['h'] - df['l'], np.maximum(abs(df['h'] - df['prev_c']), abs(df['l'] - df['prev_c'])))
+    atr = tr.rolling(days).mean().iloc[-1]
+    return float(atr) if pd.notna(atr) else None
+
+
+def get_snapshot(symbols: List[str]):
+    req = StockSnapshotsRequest(symbol_or_symbols=symbols, feed=DATA_FEED)
+    return md_client.get_stock_snapshots(req)
+
+
+def compute_rvol(symbol: str, intraday_volume: int) -> Optional[float]:
+    # Compare current day volume vs 30-day average daily volume
+    end = datetime.now(tz=timezone.utc)
+    start = end - timedelta(days=60)
+    req = StockBarsRequest(symbol_or_symbols=symbol, timeframe=TimeFrame.Day, start=start, end=end, feed=DATA_FEED)
+    bars = md_client.get_stock_bars(req)
+    if symbol not in bars or len(bars[symbol]) < 30:
+        return None
+    vols = [b.volume for b in bars[symbol]][-30:]
+    avg = np.mean(vols)
+    return float(intraday_volume / avg) if avg > 0 else None
+
+
+def opening_range(symbol: str, now_et: datetime) -> Optional[Tuple[float, float]]:
+    # Cache the first N minutes high/low using 1-minute bars
+    if symbol in cache.opening_range:
+        return cache.opening_range[symbol]
+    open_start = now_et.replace(hour=9, minute=30, second=0, microsecond=0, tzinfo=MARKET_TZ)
+    open_end = open_start + timedelta(minutes=OPENING_RANGE_MIN)
+    req = StockBarsRequest(
+        symbol_or_symbols=symbol,
+        timeframe=TimeFrame(1, TimeFrameUnit.Minute),
+        start=open_start.astimezone(timezone.utc),
+        end=open_end.astimezone(timezone.utc),
+        feed=DATA_FEED,
+    )
+    bars = md_client.get_stock_bars(req)
+    if symbol not in bars or len(bars[symbol]) == 0:
+        return None
+    highs = [b.high for b in bars[symbol]]
+    lows = [b.low for b in bars[symbol]]
+    rng = (max(highs), min(lows))
+    cache.opening_range[symbol] = rng
+    return rng
+
+
+def vwap_from_bars(df: pd.DataFrame) -> Optional[float]:
+    # df with columns: h,l,c,v
+    if df.empty:
+        return None
+    tp = (df['h'] + df['l'] + df['c']) / 3.0
+    vwap = (tp * df['v']).sum() / max(df['v'].sum(), 1)
+    return float(vwap)
+
+
+def intraday_snapshot_dataframe(snap) -> pd.DataFrame:
+    rows = []
+    for sym, s in snap.items():
+        if s is None or s.latest_trade is None or s.minute_bar is None or s.daily_bar is None:
+            continue
+        lt = s.latest_trade
+        mb = s.minute_bar
+        db = s.daily_bar
+        q = s.latest_quote
+        rows.append({
+            'symbol': sym,
+            'price': lt.price,
+            'bid': (q.bid_price if q else None),
+            'ask': (q.ask_price if q else None),
+            'minute_high': mb.high,
+            'minute_low': mb.low,
+            'day_open': db.open,
+            'prev_close': s.prev_daily_bar.close if s.prev_daily_bar else None,
+            'day_high': db.high,
+            'day_low': db.low,
+            'day_volume': db.volume,
+            'trade_volume': lt.size,
+            'acc_volume': s.minute_bar.vwap * 0 + s.daily_bar.volume,  # alpaca does not expose cumulative here; reuse day_volume
+        })
+    return pd.DataFrame(rows)
+
+
+def spread_pct(bid: Optional[float], ask: Optional[float]) -> Optional[float]:
+    if not bid or not ask or bid <= 0:
+        return None
+    mid = (bid + ask) / 2.0
+    return (ask - bid) / mid if mid > 0 else None
+
+
+def build_signal(sym: str, row: pd.Series, now_et: datetime) -> Optional[Signal]:
+    reasons = []
+    price = float(row['price'])
+    if price < MIN_PRICE:
+        return None
+
+    sp = spread_pct(row.get('bid'), row.get('ask'))
+    if sp is None or sp > MAX_SPREAD_PCT:
+        return None
+    reasons.append(f"tight spread {sp:.3%}")
+
+    prev_close = float(row['prev_close']) if row.get('prev_close') else None
+    if not prev_close or prev_close <= 0:
+        return None
+    gap = (price - prev_close) / prev_close
+    if gap < GAP_MIN or gap > GAP_MAX:
+        return None
+    reasons.append(f"gap {gap:.2%}")
+
+    # RVOL (rough proxy using day_volume vs 30d avg)
+    rvol = compute_rvol(sym, int(row.get('day_volume', 0)))
+    if rvol is None or rvol < MIN_RVOL:
+        return None
+    reasons.append(f"RVOL {rvol:.2f}×")
+
+    # Opening range breakout
+    rng = opening_range(sym, now_et)
+    if not rng:
+        return None
+    orb_high, orb_low = rng
+    if price <= orb_high:
+        return None
+    reasons.append("ORB above 15m high")
+
+    # Approx VWAP using minute bars from open to now
+    start = now_et.replace(hour=9, minute=30, second=0, microsecond=0, tzinfo=MARKET_TZ)
+    req = StockBarsRequest(
+        symbol_or_symbols=sym,
+        timeframe=TimeFrame(1, TimeFrameUnit.Minute),
+        start=start.astimezone(timezone.utc),
+        end=now_et.astimezone(timezone.utc),
+        feed=DATA_FEED,
+    )
+    bars = md_client.get_stock_bars(req)
+    if sym not in bars or len(bars[sym]) == 0:
+        return None
+    df = pd.DataFrame([{'h': b.high,'l': b.low,'c': b.close,'v': b.volume} for b in bars[sym]])
+    vwap = vwap_from_bars(df)
+    if vwap is None or price < vwap:
+        return None
+    reasons.append("above VWAP")
+
+    # ATR for stop placement
+    atr = atr_from_daily(sym, ATR_DAYS)
+    if atr is None or atr <= 0:
+        return None
+
+    stop = max(vwap - VWAP_K * atr, orb_low)  # protective stop below VWAP and/or OR low
+    # Ensure stop is below price
+    if stop >= price:
+        stop = price * (1 - 0.0075)  # fallback ~0.75%
+
+    risk = price - stop
+    take = price + TAKE_PROFIT_R * risk
+
+    reasons.append(f"ATR {atr:.2f}")
+
+    return Signal(symbol=sym, reason=reasons, entry=price, stop=stop, take_profit=take)
+
+
+def eligible_to_trade(sym: str, now: datetime) -> bool:
+    last = cache.last_trade_time.get(sym)
+    if last and now - last < timedelta(minutes=COOLDOWN_MINUTES):
+        return False
+    return True
+
+
+def place_bracket_order(sym: str, qty: int, entry_side: OrderSide, take: float, stop: float):
+    # Market entry with attached TP/SL (GTC)
+    if entry_side is OrderSide.BUY:
+        req = BracketOrderRequest(
+            symbol=sym,
+            qty=qty,
+            side=OrderSide.BUY,
+            time_in_force=TimeInForce.DAY,
+            take_profit=dict(limit_price=round(take, 2)),
+            stop_loss=dict(stop_price=round(stop, 2)),
+        )
+    else:
+        req = BracketOrderRequest(
+            symbol=sym,
+            qty=qty,
+            side=OrderSide.SELL,
+            time_in_force=TimeInForce.DAY,
+            take_profit=dict(limit_price=round(take, 2)),
+            stop_loss=dict(stop_price=round(stop, 2)),
+        )
+    order = trading_client.submit_order(req)
+    return order
+
+
+async def scan_and_trade_once():
+    now = datetime.now(tz=MARKET_TZ)
+    if not in_trading_window(now):
+        print(f"[{now.isoformat()}] Outside trading window.")
+        return
+
+    equity = get_account_equity()
+    positions = get_positions_map()
+    open_symbols = set(positions.keys())
+
+    if len(open_symbols) >= MAX_CONCURRENT_POS:
+        print(f"Max positions open ({len(open_symbols)}/{MAX_CONCURRENT_POS}). Skipping.")
+        return
+
+    # Pull snapshots in chunks (API limits)
+    chunk = 30
+    candidates: List[Signal] = []
+    for i in range(0, len(WATCHLIST), chunk):
+        batch = WATCHLIST[i:i+chunk]
+        try:
+            snap = get_snapshot(batch)
+        except Exception as e:
+            print("Snapshot error:", e)
+            continue
+        df = intraday_snapshot_dataframe(snap)
+        if df.empty:
+            continue
+        for _, row in df.iterrows():
+            sym = row['symbol']
+            if sym in open_symbols:
+                continue
+            if not eligible_to_trade(sym, now):
+                continue
+            try:
+                sig = build_signal(sym, row, now)
+            except Exception as e:
+                print(f"Signal error {sym}:", e)
+                sig = None
+            if sig:
+                candidates.append(sig)
+
+    # Sort candidates by combined strength (RVOL, gap) from textual reasons
+    def strength_key(s: Signal):
+        # Extract numbers heuristically
+        rvol = 0.0
+        gap = 0.0
+        for r in s.reason:
+            if r.startswith("RVOL"):
+                try:
+                    rvol = float(r.split()[1].replace('×',''))
+                except:
+                    pass
+            if r.startswith("gap"):
+                try:
+                    gap = float(r.split()[1].replace('%',''))
+                except:
+                    pass
+        return (rvol, gap)
+
+    candidates.sort(key=strength_key, reverse=True)
+
+    # Enter up to remaining slots
+    slots = MAX_CONCURRENT_POS - len(open_symbols)
+    for sig in candidates[:slots]:
+        # Position sizing: risk R = equity * RISK_PER_TRADE
+        risk_dollars = max(equity * RISK_PER_TRADE, 10)  # minimum risk $10
+        per_share_risk = max(sig.entry - sig.stop, 0.01)
+        qty = int(risk_dollars / per_share_risk)
+        if qty <= 0:
+            continue
+        # Sanity cap
+        max_value = equity * 0.10  # max 10% of equity per position (gross)
+        qty = int(min(qty, max_value / sig.entry))
+        if qty <= 0:
+            continue
+
+        try:
+            order = place_bracket_order(sig.symbol, qty, OrderSide.BUY, sig.take_profit, sig.stop)
+            cache.last_trade_time[sig.symbol] = now
+            print(f"Entered {sig.symbol} x{qty} @~{sig.entry:.2f} | stop {sig.stop:.2f} | take {sig.take_profit:.2f} | reasons: {', '.join(sig.reason)}")
+        except Exception as e:
+            print(f"Order error {sig.symbol}:
+{e}")
+
+
+async def main_loop():
+    print("Starting day trading bot (paper). Universe:", WATCHLIST)
+    # Daily guard: shut down if daily P/L beyond -DAILY_MAX_LOSS
+    start_equity = get_account_equity()
+    while True:
+        now = datetime.now(tz=MARKET_TZ)
+        try:
+            cur_equity = get_account_equity()
+            if cur_equity < start_equity * (1 - DAILY_MAX_LOSS):
+                print(f"Daily loss limit reached. Start {start_equity:.2f} → Now {cur_equity:.2f}. Stopping.")
+                break
+            await scan_and_trade_once()
+        except Exception as e:
+            print("Loop error:", e)
+        await asyncio.sleep(POLL_SEC)
+
+
+if __name__ == "__main__":
+    # Basic env validation
+    if not ALPACA_API_KEY or not ALPACA_SECRET:
+        raise SystemExit("Please set ALPACA_API_KEY and ALPACA_SECRET in Replit Secrets.")
+    try:
+        asyncio.run(main_loop())
+    except KeyboardInterrupt:
+        print("Exiting...")

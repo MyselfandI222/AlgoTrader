@@ -1,0 +1,217 @@
+import os, math, time, json, argparse, datetime as dt
+import numpy as np
+import pandas as pd
+import yfinance as yf
+
+# ---------------------------
+# Helpers
+# ---------------------------
+def drawdown(equity):
+    peak = equity.cummax()
+    dd = (equity - peak) / peak
+    return dd
+
+def metrics_from_equity(equity, ret_series, rf=0.0):
+    # equity indexed by date, daily freq
+    total_return = equity.iloc[-1] / equity.iloc[0] - 1
+    days = (equity.index[-1] - equity.index[0]).days
+    years = max(days / 365.25, 1e-9)
+    cagr = (equity.iloc[-1] / equity.iloc[0]) ** (1/years) - 1
+
+    # Sharpe (daily to annualized)
+    if len(ret_series) > 1:
+        ann_vol = ret_series.std(ddof=1) * math.sqrt(252)
+        ann_ret = ret_series.mean() * 252
+        sharpe = (ann_ret - rf) / (ann_vol + 1e-12)
+    else:
+        sharpe = np.nan
+
+    mdd = drawdown(equity).min()
+    return {"CAGR": cagr, "TotalReturn": total_return, "Sharpe": sharpe, "MaxDD": mdd}
+
+def pretty_pct(x):
+    return f"{x*100:.2f}%"
+
+# ---------------------------
+# Indicators
+# ---------------------------
+def sma(series, n):
+    return series.rolling(n).mean()
+
+def rsi(series, n=14):
+    delta = series.diff()
+    up = delta.clip(lower=0)
+    down = -delta.clip(upper=0)
+    roll_up = up.ewm(alpha=1/n, adjust=False).mean()
+    roll_down = down.ewm(alpha=1/n, adjust=False).mean()
+    rs = roll_up / (roll_down + 1e-12)
+    return 100 - (100 / (1 + rs))
+
+# ---------------------------
+# Data
+# ---------------------------
+def get_prices(ticker, start, end):
+    df = yf.download(ticker, start=start, end=end, auto_adjust=True, progress=False)
+    if df.empty:
+        raise ValueError(f"No data for {ticker}.")
+    df = df[['Close']]
+    df.columns = ['close']
+    return df
+
+# ---------------------------
+# Strategy
+# ---------------------------
+def signals_sma_rsi(df, fast=10, slow=30, use_rsi=False, rsi_len=14, rsi_buy=55, rsi_sell=45):
+    df = df.copy()
+    df['sma_fast'] = sma(df['close'], fast)
+    df['sma_slow'] = sma(df['close'], slow)
+    df['rsi'] = rsi(df['close'], rsi_len) if use_rsi else np.nan
+
+    long_entry = (df['sma_fast'] > df['sma_slow'])
+    long_exit  = (df['sma_fast'] < df['sma_slow'])
+
+    if use_rsi:
+        long_entry = long_entry & (df['rsi'] >= rsi_buy)
+        long_exit  = long_exit | (df['rsi'] <= rsi_sell)
+
+    # Position: 1 when long, 0 when flat (no short for simplicity)
+    df['pos'] = 0
+    df.loc[long_entry, 'pos'] = 1
+    df.loc[long_exit,  'pos'] = 0
+    df['pos'] = df['pos'].ffill().fillna(0)
+
+    return df
+
+# ---------------------------
+# Backtester (vectorized, long-only)
+# ---------------------------
+def backtest(df, cash0=10_000, risk_frac=0.2, stop_pct=0.08, slippage_bps=1):
+    """
+    risk_frac: fraction of equity to allocate when flat -> pos sizing
+    stop_pct: percentage stop from entry price (simple trailing stop disabled for clarity)
+    slippage_bps: round-trip bps assumed on changes
+    """
+    df = df.copy()
+    df['ret'] = df['close'].pct_change().fillna(0)
+
+    # Detect position changes (trades)
+    df['pos_prev'] = df['pos'].shift(1).fillna(0)
+    trade_change = df['pos'] - df['pos_prev']
+
+    equity = []
+    cash = cash0
+    shares = 0
+    entry_price = np.nan
+    last_price = df['close'].iloc[0]
+
+    daily_ret = []
+
+    for date, row in df.iterrows():
+        price = row['close']
+        pos = row['pos']
+        pos_prev = row['pos_prev']
+
+        # Exit on stop
+        if shares > 0 and (price <= entry_price * (1 - stop_pct)):
+            # sell all at stop, pay slippage
+            cash += shares * price * (1 - slippage_bps/10000)
+            shares = 0
+            pos = 0  # force flat
+            # reset signal so we don't immediately re-enter at the same bar
+        # Reconcile pos vs shares
+        if pos_prev == 0 and pos == 1 and shares == 0:
+            # Enter new long with risk_frac of current equity
+            eq_now = cash + shares * price
+            alloc = eq_now * risk_frac
+            shares = math.floor(alloc / price)
+            if shares > 0:
+                cost = shares * price * (1 + slippage_bps/10000)
+                cash -= cost
+                entry_price = price
+        elif pos_prev == 1 and pos == 0 and shares > 0:
+            # Exit long
+            cash += shares * price * (1 - slippage_bps/10000)
+            shares = 0
+            entry_price = np.nan
+
+        eq = cash + shares * price
+        equity.append(eq)
+
+        # Daily return from equity curve
+        if len(equity) > 1:
+            daily_ret.append(equity[-1] / equity[-2] - 1)
+        else:
+            daily_ret.append(0.0)
+
+        last_price = price
+
+    df['equity'] = equity
+    df['daily_ret'] = daily_ret
+    return df
+
+# ---------------------------
+# Paper trading (simulated intraday loop on daily bars)
+# ---------------------------
+def paper_trade(ticker, fast, slow, use_rsi, rsi_len, rsi_buy, rsi_sell, cash0=1_0000):
+    print("Starting paper trading session on daily bars. Press Ctrl+C to stop.")
+    start = (dt.date.today() - dt.timedelta(days=365*2)).isoformat()
+    while True:
+        try:
+            end = (dt.date.today() + dt.timedelta(days=1)).isoformat()
+            df = get_prices(ticker, start, end)
+            sig = signals_sma_rsi(df, fast, slow, use_rsi, rsi_len, rsi_buy, rsi_sell)
+            res = backtest(sig, cash0=cash0)
+            last = res.iloc[-1]
+            print(f"[{res.index[-1].date()}] {ticker} close={last['close']:.2f}  equity=${last['equity']:.2f}")
+            time.sleep(10)  # refresh loop (10s just for demo)
+        except KeyboardInterrupt:
+            print("Stopped.")
+            break
+
+# ---------------------------
+# CLI
+# ---------------------------
+def main():
+    p = argparse.ArgumentParser(description="AlgoTrader Mini: SMA + optional RSI, backtest or paper mode.")
+    p.add_argument("--ticker", type=str, default="AAPL")
+    p.add_argument("--start", type=str, default="2018-01-01")
+    p.add_argument("--end", type=str, default=dt.date.today().isoformat())
+    p.add_argument("--fast", type=int, default=10)
+    p.add_argument("--slow", type=int, default=30)
+    p.add_argument("--use_rsi", action="store_true")
+    p.add_argument("--rsi_len", type=int, default=14)
+    p.add_argument("--rsi_buy", type=float, default=55)
+    p.add_argument("--rsi_sell", type=float, default=45)
+    p.add_argument("--cash", type=float, default=10_000)
+    p.add_argument("--risk_frac", type=float, default=0.2)
+    p.add_argument("--stop_pct", type=float, default=0.08)
+    p.add_argument("--slip_bps", type=float, default=1.0)
+    p.add_argument("--mode", type=str, choices=["backtest", "paper"], default="backtest")
+    args = p.parse_args()
+
+    if args.mode == "paper":
+        paper_trade(args.ticker, args.fast, args.slow, args.use_rsi, args.rsi_len, args.rsi_buy, args.rsi_sell, cash0=args.cash)
+        return
+
+    # Backtest mode
+    df = get_prices(args.ticker, args.start, args.end)
+    sig = signals_sma_rsi(df, args.fast, args.slow, args.use_rsi, args.rsi_len, args.rsi_buy, args.rsi_sell)
+    res = backtest(sig, cash0=args.cash, risk_frac=args.risk_frac, stop_pct=args.stop_pct, slippage_bps=args.slip_bps)
+
+    m = metrics_from_equity(res['equity'], res['daily_ret'])
+    print("\n=== Parameters ===")
+    print(vars(args))
+    print("\n=== Performance ===")
+    print(f"CAGR: {pretty_pct(m['CAGR'])}")
+    print(f"Total Return: {pretty_pct(m['TotalReturn'])}")
+    print(f"Sharpe: {m['Sharpe']:.2f}")
+    print(f"Max Drawdown: {pretty_pct(m['MaxDD'])}")
+    print("\n=== Last row ===")
+    print(res.tail(3).to_string())
+
+    # Signal for next session (today)
+    last_pos = int(res['pos'].iloc[-1])
+    print(f"\nCurrent position (1=long,0=flat): {last_pos}")
+
+if __name__ == "__main__":
+    main()
