@@ -204,6 +204,66 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Real-time market data endpoints (specific routes first)
+  app.get("/api/market/quote/:symbol", async (req, res) => {
+    try {
+      const symbol = req.params.symbol.toUpperCase();
+      const quote = await marketDataService.getQuote(symbol);
+      
+      // Update storage with real-time data
+      await storage.updateMarketData(symbol, {
+        price: quote.price,
+        change: quote.change,
+        changePercent: quote.changePercent,
+        volume: quote.volume,
+        updatedAt: quote.timestamp
+      });
+      
+      res.json(quote);
+    } catch (error) {
+      console.error(`Failed to fetch quote for ${req.params.symbol}:`, error);
+      
+      // Fallback to stored data
+      const stored = await storage.getMarketData(req.params.symbol.toUpperCase());
+      if (stored) {
+        res.json(stored);
+      } else {
+        res.status(404).json({ error: "Symbol not found" });
+      }
+    }
+  });
+
+  app.get("/api/market/providers", async (req, res) => {
+    const providers = marketDataService.getConfiguredProviders();
+    const current = marketDataService.getCurrentProvider();
+    
+    res.json({
+      current: current.name,
+      available: providers.map(p => ({
+        name: p.name,
+        configured: p.isConfigured()
+      }))
+    });
+  });
+
+  app.post("/api/market/refresh", async (req, res) => {
+    try {
+      const quotes = await marketDataService.refreshMarketData();
+      res.json({
+        success: true,
+        updated: quotes.length,
+        provider: marketDataService.getCurrentProvider().name,
+        data: quotes
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: "Failed to refresh market data"
+      });
+    }
+  });
+
+  // Generic market data routes (less specific routes last)
   app.get("/api/market/:symbol", async (req, res) => {
     const data = await storage.getMarketData(req.params.symbol);
     if (!data) {
@@ -364,64 +424,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Real-time market data endpoints
-  app.get("/api/market/quote/:symbol", async (req, res) => {
-    try {
-      const symbol = req.params.symbol.toUpperCase();
-      const quote = await marketDataService.getQuote(symbol);
-      
-      // Update storage with real-time data
-      await storage.updateMarketData(symbol, {
-        price: quote.price,
-        change: quote.change,
-        changePercent: quote.changePercent,
-        volume: quote.volume,
-        updatedAt: quote.timestamp
-      });
-      
-      res.json(quote);
-    } catch (error) {
-      console.error(`Failed to fetch quote for ${req.params.symbol}:`, error);
-      
-      // Fallback to stored data
-      const stored = await storage.getMarketData(req.params.symbol.toUpperCase());
-      if (stored) {
-        res.json(stored);
-      } else {
-        res.status(404).json({ error: "Symbol not found" });
-      }
-    }
-  });
-
-  app.get("/api/market/providers", async (req, res) => {
-    const providers = marketDataService.getConfiguredProviders();
-    const current = marketDataService.getCurrentProvider();
-    
-    res.json({
-      current: current.name,
-      available: providers.map(p => ({
-        name: p.name,
-        configured: p.isConfigured()
-      }))
-    });
-  });
-
-  app.post("/api/market/refresh", async (req, res) => {
-    try {
-      const quotes = await marketDataService.refreshMarketData();
-      res.json({
-        success: true,
-        updated: quotes.length,
-        provider: marketDataService.getCurrentProvider().name,
-        data: quotes
-      });
-    } catch (error) {
-      res.status(500).json({
-        success: false,
-        error: "Failed to refresh market data"
-      });
-    }
-  });
 
   // Register strategy routes
   app.use(createStrategyRoutes(storage));
