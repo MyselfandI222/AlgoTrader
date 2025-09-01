@@ -6,6 +6,7 @@ import { AIStrategies } from "@/components/dashboard/ai-strategies";
 import { RecentTrades } from "@/components/dashboard/recent-trades";
 import { RiskAnalysis } from "@/components/dashboard/risk-analysis";
 import { MarketWatch } from "@/components/dashboard/market-watch";
+import { MarketDataStatus } from "@/components/market/market-data-status";
 
 export default function Dashboard() {
   return (
@@ -23,9 +24,14 @@ export default function Dashboard() {
             <AIStrategies />
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <RecentTrades />
-            <RiskAnalysis />
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-2">
+              <RecentTrades />
+            </div>
+            <div className="space-y-6">
+              <MarketDataStatus />
+              <RiskAnalysis />
+            </div>
           </div>
 
           <MarketWatch />

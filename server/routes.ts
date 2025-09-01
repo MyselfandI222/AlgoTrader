@@ -3,6 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { insertUserSchema, insertTradeSchema, insertTransactionSchema, updateProfileSchema, updateNotificationsSchema, changePasswordSchema } from "@shared/schema";
 import { createStrategyRoutes } from "./routes/strategy-routes.js";
+import { marketDataService } from "./services/market-data-service.js";
 import { z } from "zod";
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -178,8 +179,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Market data routes
   app.get("/api/market", async (req, res) => {
-    const marketData = await storage.getAllMarketData();
-    res.json(marketData);
+    try {
+      // Try to get real-time data first
+      const realTimeData = await marketDataService.refreshMarketData();
+      
+      // Update storage with real-time data
+      for (const quote of realTimeData) {
+        await storage.updateMarketData(quote.symbol, {
+          price: quote.price,
+          change: quote.change,
+          changePercent: quote.changePercent,
+          volume: quote.volume,
+          updatedAt: quote.timestamp
+        });
+      }
+      
+      const marketData = await storage.getAllMarketData();
+      res.json(marketData);
+    } catch (error) {
+      console.error("Failed to fetch real-time market data:", error);
+      // Fallback to stored data
+      const marketData = await storage.getAllMarketData();
+      res.json(marketData);
+    }
   });
 
   app.get("/api/market/:symbol", async (req, res) => {
@@ -339,6 +361,65 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ user: demoUser, portfolio });
     } catch (error) {
       res.status(500).json({ error: "Failed to initialize demo data" });
+    }
+  });
+
+  // Real-time market data endpoints
+  app.get("/api/market/quote/:symbol", async (req, res) => {
+    try {
+      const symbol = req.params.symbol.toUpperCase();
+      const quote = await marketDataService.getQuote(symbol);
+      
+      // Update storage with real-time data
+      await storage.updateMarketData(symbol, {
+        price: quote.price,
+        change: quote.change,
+        changePercent: quote.changePercent,
+        volume: quote.volume,
+        updatedAt: quote.timestamp
+      });
+      
+      res.json(quote);
+    } catch (error) {
+      console.error(`Failed to fetch quote for ${req.params.symbol}:`, error);
+      
+      // Fallback to stored data
+      const stored = await storage.getMarketData(req.params.symbol.toUpperCase());
+      if (stored) {
+        res.json(stored);
+      } else {
+        res.status(404).json({ error: "Symbol not found" });
+      }
+    }
+  });
+
+  app.get("/api/market/providers", async (req, res) => {
+    const providers = marketDataService.getConfiguredProviders();
+    const current = marketDataService.getCurrentProvider();
+    
+    res.json({
+      current: current.name,
+      available: providers.map(p => ({
+        name: p.name,
+        configured: p.isConfigured()
+      }))
+    });
+  });
+
+  app.post("/api/market/refresh", async (req, res) => {
+    try {
+      const quotes = await marketDataService.refreshMarketData();
+      res.json({
+        success: true,
+        updated: quotes.length,
+        provider: marketDataService.getCurrentProvider().name,
+        data: quotes
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: "Failed to refresh market data"
+      });
     }
   });
 
