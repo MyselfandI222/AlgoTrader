@@ -23,24 +23,28 @@ interface ProvidersResponse {
 export function useMarketData() {
   return useQuery<StockQuote[]>({
     queryKey: ["/api/market"],
-    refetchInterval: 30000, // Refresh every 30 seconds
-    staleTime: 10000, // Consider data stale after 10 seconds
+    refetchInterval: 60000, // Refresh every 60 seconds (much more reasonable)
+    staleTime: 30000, // Consider data stale after 30 seconds
+    gcTime: 300000, // Keep data in cache for 5 minutes
   });
 }
 
 export function useStockQuote(symbol: string) {
   return useQuery<StockQuote>({
     queryKey: ["/api/market/quote", symbol],
-    refetchInterval: 15000, // Refresh every 15 seconds for individual quotes
-    staleTime: 5000,
+    refetchInterval: 60000, // Refresh every 60 seconds (same as market data)
+    staleTime: 30000, // Consider data stale after 30 seconds
     enabled: !!symbol,
+    gcTime: 300000, // Keep data in cache for 5 minutes
   });
 }
 
 export function useMarketDataProviders() {
   return useQuery<ProvidersResponse>({
     queryKey: ["/api/market/providers"],
-    staleTime: 60000, // Providers info doesn't change often
+    staleTime: 300000, // Providers info doesn't change often - 5 minutes
+    refetchInterval: false, // Don't auto-refresh providers
+    gcTime: 600000, // Keep in cache for 10 minutes
   });
 }
 
