@@ -103,6 +103,189 @@ export class AlphaVantageProvider implements MarketDataProvider {
   }
 }
 
+export class IEXCloudProvider implements MarketDataProvider {
+  name = "IEX Cloud";
+  private apiKey: string;
+  private baseUrl = "https://cloud.iexapis.com/stable";
+
+  constructor(apiKey?: string) {
+    this.apiKey = apiKey || process.env.IEX_CLOUD_API_KEY || "";
+  }
+
+  isConfigured(): boolean {
+    return !!this.apiKey;
+  }
+
+  async getQuote(symbol: string): Promise<StockQuote> {
+    if (!this.isConfigured()) {
+      throw new Error("IEX Cloud API key not configured");
+    }
+
+    try {
+      const response = await fetch(
+        `${this.baseUrl}/stock/${symbol}/quote?token=${this.apiKey}`
+      );
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      
+      if (data.error) {
+        throw new Error(`API Error: ${data.error}`);
+      }
+
+      return {
+        symbol: data.symbol,
+        price: data.latestPrice?.toString() || "0",
+        change: data.change?.toString() || "0",
+        changePercent: data.changePercent ? (data.changePercent * 100).toFixed(2) : "0",
+        volume: data.latestVolume || 0,
+        timestamp: new Date()
+      };
+    } catch (error) {
+      console.error(`IEX Cloud API error for ${symbol}:`, error);
+      throw error;
+    }
+  }
+
+  async getMultipleQuotes(symbols: string[]): Promise<StockQuote[]> {
+    // IEX Cloud supports batch requests - much faster!
+    const symbolsString = symbols.join(',');
+    
+    try {
+      const response = await fetch(
+        `${this.baseUrl}/stock/market/batch?symbols=${symbolsString}&types=quote&token=${this.apiKey}`
+      );
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      const quotes: StockQuote[] = [];
+      
+      for (const symbol of symbols) {
+        const stockData = data[symbol];
+        if (stockData && stockData.quote) {
+          const quote = stockData.quote;
+          quotes.push({
+            symbol: quote.symbol,
+            price: quote.latestPrice?.toString() || "0",
+            change: quote.change?.toString() || "0",
+            changePercent: quote.changePercent ? (quote.changePercent * 100).toFixed(2) : "0",
+            volume: quote.latestVolume || 0,
+            timestamp: new Date()
+          });
+        }
+      }
+      
+      return quotes;
+    } catch (error) {
+      console.error(`IEX Cloud batch API error:`, error);
+      throw error;
+    }
+  }
+}
+
+export class TwelvedataProvider implements MarketDataProvider {
+  name = "Twelvedata";
+  private apiKey: string;
+  private baseUrl = "https://api.twelvedata.com";
+
+  constructor(apiKey?: string) {
+    this.apiKey = apiKey || process.env.TWELVEDATA_API_KEY || "";
+  }
+
+  isConfigured(): boolean {
+    return !!this.apiKey;
+  }
+
+  async getQuote(symbol: string): Promise<StockQuote> {
+    if (!this.isConfigured()) {
+      throw new Error("Twelvedata API key not configured");
+    }
+
+    try {
+      const response = await fetch(
+        `${this.baseUrl}/price?symbol=${symbol}&apikey=${this.apiKey}`
+      );
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const priceData = await response.json();
+      
+      if (priceData.status === "error") {
+        throw new Error(`API Error: ${priceData.message}`);
+      }
+
+      // Get additional quote data
+      const quoteResponse = await fetch(
+        `${this.baseUrl}/quote?symbol=${symbol}&apikey=${this.apiKey}`
+      );
+      
+      let quoteData = { change: "0", percent_change: "0", volume: 0 };
+      if (quoteResponse.ok) {
+        quoteData = await quoteResponse.json();
+      }
+
+      return {
+        symbol,
+        price: priceData.price || "0",
+        change: quoteData.change || "0",
+        changePercent: quoteData.percent_change ? quoteData.percent_change.replace('%', '') : "0",
+        volume: quoteData.volume || 0,
+        timestamp: new Date()
+      };
+    } catch (error) {
+      console.error(`Twelvedata API error for ${symbol}:`, error);
+      throw error;
+    }
+  }
+
+  async getMultipleQuotes(symbols: string[]): Promise<StockQuote[]> {
+    // Twelvedata supports batch requests with comma-separated symbols
+    const symbolsString = symbols.join(',');
+    
+    try {
+      const response = await fetch(
+        `${this.baseUrl}/quote?symbol=${symbolsString}&apikey=${this.apiKey}`
+      );
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      const quotes: StockQuote[] = [];
+      
+      // Handle both single symbol and batch responses
+      const results = Array.isArray(data) ? data : [data];
+      
+      for (const quote of results) {
+        if (quote.symbol) {
+          quotes.push({
+            symbol: quote.symbol,
+            price: quote.close || "0",
+            change: quote.change || "0",
+            changePercent: quote.percent_change ? quote.percent_change.replace('%', '') : "0",
+            volume: quote.volume || 0,
+            timestamp: new Date()
+          });
+        }
+      }
+      
+      return quotes;
+    } catch (error) {
+      console.error(`Twelvedata batch API error:`, error);
+      throw error;
+    }
+  }
+}
+
 export class FinnhubProvider implements MarketDataProvider {
   name = "Finnhub";
   private apiKey: string;
@@ -220,11 +403,13 @@ export class MarketDataService {
   private currentProviderIndex = 0;
 
   constructor() {
-    // Initialize providers in order of preference
+    // Initialize providers in order of preference (best free ones first!)
     this.providers = [
-      new AlphaVantageProvider(),
-      new FinnhubProvider(),
-      new MockProvider() // Always available as fallback
+      new IEXCloudProvider(),     // 50,000 calls/month FREE
+      new TwelvedataProvider(),   // 800 calls/day FREE  
+      new AlphaVantageProvider(), // 25 calls/day free (fallback)
+      new FinnhubProvider(),      // 60 calls/minute
+      new MockProvider()          // Always available as fallback
     ];
   }
 

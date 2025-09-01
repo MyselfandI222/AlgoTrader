@@ -7,11 +7,12 @@ import { RiskManagement } from "@/components/strategies/risk-management";
 import { AdvancedStrategyConfig } from "@/components/strategies/advanced-strategy-config";
 import { AlgorithmEngine } from "@/components/strategies/algorithm-engine";
 import { BacktestingLab } from "@/components/strategies/backtesting-lab";
+import { APISettings } from "@/components/settings/api-settings";
 import { Button } from "@/components/ui/button";
-import { Brain, Shield, BarChart3, Activity, Target } from "lucide-react";
+import { Brain, Shield, BarChart3, Activity, Target, Key } from "lucide-react";
 
 export default function Strategies() {
-  const [activeTab, setActiveTab] = useState<"overview" | "strategies" | "risk" | "engine" | "backtest" | "config">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "strategies" | "risk" | "engine" | "backtest" | "config" | "api">("overview");
   const [selectedStrategy, setSelectedStrategy] = useState<{ id: string; name: string } | null>(null);
 
   const tabs = [
@@ -20,6 +21,7 @@ export default function Strategies() {
     { id: "engine" as const, label: "Algorithm Engine", icon: Activity },
     { id: "backtest" as const, label: "Backtesting Lab", icon: Target },
     { id: "risk" as const, label: "Risk Management", icon: Shield },
+    { id: "api" as const, label: "API Settings", icon: Key },
   ];
 
   return (
@@ -64,6 +66,7 @@ export default function Strategies() {
             {activeTab === "engine" && <AlgorithmEngine />}
             {activeTab === "backtest" && <BacktestingLab />}
             {activeTab === "risk" && <RiskManagement />}
+            {activeTab === "api" && <APISettings />}
             {selectedStrategy && (
               <AdvancedStrategyConfig 
                 strategyId={selectedStrategy.id}
