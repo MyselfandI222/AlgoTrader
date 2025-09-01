@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useStockQuote } from "@/hooks/use-market-data";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from "recharts";
 import { TrendingUp, TrendingDown, DollarSign, BarChart3, Clock, X } from "lucide-react";
+import { useState } from "react";
 
 interface StockDetailModalProps {
   symbol: string | null;
@@ -15,27 +16,64 @@ interface StockDetailModalProps {
   onClose: () => void;
 }
 
+type TimePeriod = '1D' | '7D' | '30D' | '90D' | '1Y' | '2Y';
+
 export function StockDetailModal({ symbol, isOpen, onClose }: StockDetailModalProps) {
   const { data: stockData, isLoading } = useStockQuote(symbol || "");
+  const [selectedPeriod, setSelectedPeriod] = useState<TimePeriod>('30D');
 
   if (!symbol) return null;
+
+  // Get number of days and interval based on selected period
+  const getPeriodDetails = (period: TimePeriod) => {
+    switch (period) {
+      case '1D': return { days: 1, interval: 'hour', points: 24, label: '1-Day' };
+      case '7D': return { days: 7, interval: 'day', points: 7, label: '7-Day' };
+      case '30D': return { days: 30, interval: 'day', points: 30, label: '30-Day' };
+      case '90D': return { days: 90, interval: 'day', points: 30, label: '90-Day' }; // Show every 3 days
+      case '1Y': return { days: 365, interval: 'week', points: 52, label: '1-Year' };
+      case '2Y': return { days: 730, interval: 'month', points: 24, label: '2-Year' };
+    }
+  };
 
   // Generate mock historical data for the chart
   const generateHistoricalData = () => {
     const currentPrice = parseFloat(stockData?.price || "100");
     const data = [];
     const now = new Date();
+    const { days, interval, points } = getPeriodDetails(selectedPeriod);
     
-    for (let i = 30; i >= 0; i--) {
+    for (let i = points; i >= 0; i--) {
       const date = new Date(now);
-      date.setDate(date.getDate() - i);
+      
+      // Set the date based on interval type
+      if (interval === 'hour') {
+        date.setHours(date.getHours() - i);
+      } else if (interval === 'day') {
+        date.setDate(date.getDate() - i);
+      } else if (interval === 'week') {
+        date.setDate(date.getDate() - (i * 7));
+      } else if (interval === 'month') {
+        date.setMonth(date.getMonth() - i);
+      }
       
       // Generate realistic price movement
       const variance = (Math.random() - 0.5) * 0.1; // ±10% variance
-      const price = currentPrice * (1 + variance - (i * 0.002)); // Slight downward trend over time
+      const trendFactor = selectedPeriod === '1D' ? 0.001 : 0.002; // Less trend for shorter periods
+      const price = currentPrice * (1 + variance - (i * trendFactor));
+      
+      // Format date based on period
+      let dateStr;
+      if (selectedPeriod === '1D') {
+        dateStr = date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+      } else if (selectedPeriod === '1Y' || selectedPeriod === '2Y') {
+        dateStr = date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+      } else {
+        dateStr = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      }
       
       data.push({
-        date: date.toISOString().split('T')[0],
+        date: dateStr,
         price: price,
         volume: Math.floor(Math.random() * 5000000) + 1000000
       });
@@ -138,7 +176,29 @@ export function StockDetailModal({ symbol, isOpen, onClose }: StockDetailModalPr
               <TabsContent value="chart" className="space-y-4">
                 <Card className="bg-gray-800 border-gray-700">
                   <CardHeader>
-                    <CardTitle className="text-white">30-Day Price History</CardTitle>
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-white">{getPeriodDetails(selectedPeriod).label} Price History</CardTitle>
+                      
+                      {/* Time Period Selection */}
+                      <div className="flex space-x-2">
+                        {(['1D', '7D', '30D', '90D', '1Y', '2Y'] as TimePeriod[]).map((period) => (
+                          <Button
+                            key={period}
+                            variant={selectedPeriod === period ? "default" : "outline"}
+                            size="sm"
+                            onClick={() => setSelectedPeriod(period)}
+                            className={`text-xs transition-colors ${
+                              selectedPeriod === period 
+                                ? 'bg-blue-600 hover:bg-blue-700 text-white border-blue-600' 
+                                : 'bg-gray-700 hover:bg-gray-600 text-gray-300 border-gray-600'
+                            }`}
+                            data-testid={`period-${period}`}
+                          >
+                            {period}
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
                   </CardHeader>
                   <CardContent>
                     <ResponsiveContainer width="100%" height={400}>
