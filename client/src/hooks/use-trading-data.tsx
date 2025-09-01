@@ -5,25 +5,39 @@ import type { User, Portfolio, Trade, Strategy, MarketData, Transaction, Positio
 
 const DEMO_USER_ID = "demo-user-123";
 
+// Global initialization state - shared across all hook instances
+let globalInitialized = false;
+let initPromise: Promise<any> | null = null;
+
 export function useTradingData() {
   const queryClient = useQueryClient();
-  const [initialized, setInitialized] = useState(false);
+  const [initialized, setInitialized] = useState(globalInitialized);
 
   // Initialize demo data
   const initMutation = useMutation({
     mutationFn: async () => {
-      const response = await apiRequest("POST", "/api/demo/init", {});
-      return response.json();
+      // Prevent multiple simultaneous init requests
+      if (initPromise) {
+        return initPromise;
+      }
+      
+      initPromise = apiRequest("POST", "/api/demo/init", {}).then(res => res.json());
+      return initPromise;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries();
+      globalInitialized = true;
       setInitialized(true);
+      queryClient.invalidateQueries();
+      initPromise = null; // Reset for future use
     },
+    onError: () => {
+      initPromise = null; // Reset on error
+    }
   });
 
-  // Initialize demo data on first load
+  // Initialize demo data on first load - only if not already initialized globally
   useEffect(() => {
-    if (!initialized) {
+    if (!globalInitialized && !initialized && !initMutation.isPending) {
       initMutation.mutate();
     }
   }, [initialized, initMutation]);
@@ -58,10 +72,12 @@ export function useTradingData() {
     enabled: !!portfolio?.id,
   });
 
-  // Fetch market data
+  // Fetch market data - remove duplicate query since useMarketData() already handles this
   const { data: marketData, refetch: refetchMarketData } = useQuery<MarketData[]>({
     queryKey: ["/api/market"],
     enabled: initialized,
+    staleTime: 60000, // Use same timing as useMarketData
+    refetchInterval: 60000, // Consistent with other market data queries
   });
 
   // Create transaction mutation
