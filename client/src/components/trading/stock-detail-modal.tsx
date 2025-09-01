@@ -36,12 +36,23 @@ export function StockDetailModal({ symbol, isOpen, onClose }: StockDetailModalPr
     }
   };
 
-  // Generate mock historical data for the chart
+  // Seeded random number generator for consistent data
+  const seededRandom = (seed: number) => {
+    const x = Math.sin(seed) * 10000;
+    return x - Math.floor(x);
+  };
+
+  // Generate stable historical data for the chart
   const generateHistoricalData = () => {
     const currentPrice = parseFloat(stockData?.price || "100");
     const data = [];
     const now = new Date();
     const { days, interval, points } = getPeriodDetails(selectedPeriod);
+    
+    // Create seed from symbol and period for consistent data
+    const symbolSeed = symbol.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    const periodSeed = selectedPeriod.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    const baseSeed = symbolSeed + periodSeed;
     
     for (let i = points; i >= 0; i--) {
       const date = new Date(now);
@@ -57,10 +68,15 @@ export function StockDetailModal({ symbol, isOpen, onClose }: StockDetailModalPr
         date.setMonth(date.getMonth() - i);
       }
       
-      // Generate realistic price movement
-      const variance = (Math.random() - 0.5) * 0.1; // ±10% variance
+      // Generate realistic price movement using seeded random
+      const varianceSeed = baseSeed + i * 137; // Prime number for good distribution
+      const variance = (seededRandom(varianceSeed) - 0.5) * 0.1; // ±10% variance
       const trendFactor = selectedPeriod === '1D' ? 0.001 : 0.002; // Less trend for shorter periods
       const price = currentPrice * (1 + variance - (i * trendFactor));
+      
+      // Generate consistent volume using seeded random
+      const volumeSeed = baseSeed + i * 241; // Another prime for volume
+      const volume = Math.floor(seededRandom(volumeSeed) * 5000000) + 1000000;
       
       // Format date based on period
       let dateStr;
@@ -75,7 +91,7 @@ export function StockDetailModal({ symbol, isOpen, onClose }: StockDetailModalPr
       data.push({
         date: dateStr,
         price: price,
-        volume: Math.floor(Math.random() * 5000000) + 1000000
+        volume: volume
       });
     }
     
