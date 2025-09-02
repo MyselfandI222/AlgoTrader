@@ -275,6 +275,86 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // AI Investment Engine endpoints
+  app.post("/api/ai/analyze-and-invest", async (req, res) => {
+    try {
+      const { aiInvestmentEngine } = await import("./services/ai-investment-engine.ts");
+      const { portfolioTracker } = await import("./services/portfolio-tracker.ts");
+      const { marketDataService } = await import("./services/market-data-service.ts");
+      
+      console.log('🤖 Starting AI investment analysis...');
+      
+      // Get AI decisions
+      const decisions = await aiInvestmentEngine.analyzeMarketAndMakeDecisions();
+      
+      // Execute the trades
+      const marketData = await marketDataService.refreshMarketData();
+      for (const decision of decisions) {
+        const marketStock = marketData.find(stock => stock.symbol === decision.symbol);
+        if (marketStock) {
+          const price = parseFloat(marketStock.price);
+          portfolioTracker.executeTrade(decision.symbol, decision.action, decision.quantity, price);
+        }
+      }
+      
+      // Update portfolio snapshot
+      await portfolioTracker.updatePortfolioSnapshot(marketData);
+      
+      res.json({
+        success: true,
+        decisions,
+        executedTrades: decisions.length
+      });
+    } catch (error) {
+      console.error('AI investment error:', error);
+      res.status(500).json({ error: "Failed to execute AI investment analysis" });
+    }
+  });
+
+  app.get("/api/ai/portfolio-performance/:period?", async (req, res) => {
+    try {
+      const { portfolioTracker } = await import("./services/portfolio-tracker.ts");
+      const period = req.params.period as '1D' | '1W' | '1M' | '3M' | '1Y' || '1D';
+      const chartData = portfolioTracker.getChartData(period);
+      res.json(chartData);
+    } catch (error) {
+      console.error('Portfolio performance error:', error);
+      res.status(500).json({ error: "Failed to fetch portfolio performance" });
+    }
+  });
+
+  app.get("/api/ai/portfolio-summary", async (req, res) => {
+    try {
+      const { portfolioTracker } = await import("./services/portfolio-tracker.ts");
+      const summary = portfolioTracker.getCurrentPortfolioSummary();
+      res.json(summary);
+    } catch (error) {
+      console.error('Portfolio summary error:', error);
+      res.status(500).json({ error: "Failed to fetch portfolio summary" });
+    }
+  });
+
+  app.post("/api/ai/settings", async (req, res) => {
+    try {
+      const { aiInvestmentEngine } = await import("./services/ai-investment-engine.ts");
+      aiInvestmentEngine.updateSettings(req.body);
+      res.json({ success: true, settings: aiInvestmentEngine.getSettings() });
+    } catch (error) {
+      console.error('AI settings error:', error);
+      res.status(500).json({ error: "Failed to update AI settings" });
+    }
+  });
+
+  app.get("/api/ai/settings", async (req, res) => {
+    try {
+      const { aiInvestmentEngine } = await import("./services/ai-investment-engine.ts");
+      res.json(aiInvestmentEngine.getSettings());
+    } catch (error) {
+      console.error('AI settings error:', error);
+      res.status(500).json({ error: "Failed to fetch AI settings" });
+    }
+  });
+
   // Generic market data routes (less specific routes last)
   app.get("/api/market/:symbol", async (req, res) => {
     const data = await storage.getMarketData(req.params.symbol);
