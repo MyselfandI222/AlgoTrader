@@ -395,6 +395,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Paper Trading AI endpoints
+  app.post("/api/paper-ai/analyze-and-invest", async (req, res) => {
+    try {
+      const { paperAIEngine } = await import("./services/paper-ai-engine.ts");
+      
+      console.log('🧪 Starting Paper AI investment analysis...');
+      
+      const result = await paperAIEngine.analyzeAndExecutePaperTrades();
+      
+      res.json({
+        success: true,
+        ...result
+      });
+    } catch (error) {
+      console.error('Paper AI investment error:', error);
+      res.status(500).json({ error: "Failed to execute Paper AI investment analysis" });
+    }
+  });
+
+  app.get("/api/paper-ai/status", async (req, res) => {
+    try {
+      const { paperAIEngine } = await import("./services/paper-ai-engine.ts");
+      
+      res.json({
+        balance: paperAIEngine.getPaperBalance(),
+        positions: Array.from(paperAIEngine.getPaperPositions.entries()).map(([symbol, pos]) => ({
+          symbol,
+          ...pos
+        })),
+        recentTrades: paperAIEngine.getPaperTrades().slice(0, 10)
+      });
+    } catch (error) {
+      console.error('Paper AI status error:', error);
+      res.status(500).json({ error: "Failed to fetch Paper AI status" });
+    }
+  });
+
   // Generic market data routes (less specific routes last)
   app.get("/api/market/:symbol", async (req, res) => {
     const data = await storage.getMarketData(req.params.symbol);

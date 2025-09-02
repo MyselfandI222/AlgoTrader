@@ -8,7 +8,9 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useMarketData, useStockQuote } from "@/hooks/use-market-data";
-import { DollarSign, TrendingUp, TrendingDown, Clock, Target, Zap, AlertCircle } from "lucide-react";
+import { AllocationVisualization } from "@/components/ai/allocation-visualization";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { DollarSign, TrendingUp, TrendingDown, Clock, Target, Zap, AlertCircle, Bot, Brain } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface PaperPosition {
@@ -37,10 +39,24 @@ interface PaperTrade {
 
 const INITIAL_PAPER_BALANCE = 100000; // $100k starting balance
 
+function useTriggerPaperAI() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: () => fetch("/api/paper-ai/analyze-and-invest", { method: "POST" }).then(res => res.json()),
+    onSuccess: () => {
+      // Refresh any relevant queries
+      queryClient.invalidateQueries({ queryKey: ["/api/ai/allocation"] });
+    }
+  });
+}
+
 export default function PaperTrading() {
   const [paperBalance, setPaperBalance] = useState(INITIAL_PAPER_BALANCE);
   const [paperPositions, setPaperPositions] = useState<PaperPosition[]>([]);
   const [paperTrades, setPaperTrades] = useState<PaperTrade[]>([]);
+  const [aiMode, setAiMode] = useState(false);
+  const [lastAiAnalysis, setLastAiAnalysis] = useState<Date | null>(null);
   
   // Trading form state
   const [selectedSymbol, setSelectedSymbol] = useState("AAPL");
@@ -51,6 +67,7 @@ export default function PaperTrading() {
   
   const { data: marketData } = useMarketData();
   const { data: currentQuote } = useStockQuote(selectedSymbol);
+  const triggerPaperAI = useTriggerPaperAI();
   
   const currentPrice = parseFloat(currentQuote?.price || "0");
   const orderValue = parseInt(quantity || "0") * currentPrice;
@@ -59,6 +76,23 @@ export default function PaperTrading() {
   const totalPnL = paperPositions.reduce((sum, pos) => sum + pos.pnl, 0);
   const totalValue = paperBalance + totalPnL;
   const totalPnLPercent = ((totalValue - INITIAL_PAPER_BALANCE) / INITIAL_PAPER_BALANCE) * 100;
+
+  // Auto-trigger AI analysis if AI mode is enabled
+  useEffect(() => {
+    if (!aiMode) return;
+    
+    const interval = setInterval(async () => {
+      console.log('🤖 Auto-triggering Paper AI analysis...');
+      try {
+        await triggerPaperAI.mutateAsync();
+        setLastAiAnalysis(new Date());
+      } catch (error) {
+        console.error('Paper AI analysis failed:', error);
+      }
+    }, 120000); // 2 minutes
+
+    return () => clearInterval(interval);
+  }, [aiMode, triggerPaperAI]);
 
   // Update position prices when market data changes
   useEffect(() => {
@@ -199,6 +233,15 @@ export default function PaperTrading() {
     setLimitPrice("");
   };
 
+  const triggerManualAiAnalysis = async () => {
+    try {
+      await triggerPaperAI.mutateAsync();
+      setLastAiAnalysis(new Date());
+    } catch (error) {
+      console.error('Manual Paper AI analysis failed:', error);
+    }
+  };
+
   const resetAccount = () => {
     if (confirm("Are you sure you want to reset your paper trading account? This will delete all positions and trades.")) {
       setPaperBalance(INITIAL_PAPER_BALANCE);
@@ -222,13 +265,31 @@ export default function PaperTrading() {
                 <p className="text-gray-400">Test strategies with $100k fake money using real market data</p>
               </div>
             </div>
-            <Button 
-              onClick={resetAccount}
-              variant="outline" 
-              className="border-red-600 text-red-400 hover:bg-red-600/10"
-            >
-              Reset Account
-            </Button>
+            <div className="flex items-center space-x-2">
+              <Button
+                onClick={() => setAiMode(!aiMode)}
+                className={`${aiMode ? 'bg-green-600 hover:bg-green-700' : 'bg-gray-600 hover:bg-gray-700'}`}
+              >
+                {aiMode ? (
+                  <div className="flex items-center space-x-2">
+                    <Bot className="w-4 h-4" />
+                    <span>AI Mode ON</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center space-x-2">
+                    <Brain className="w-4 h-4" />
+                    <span>AI Mode OFF</span>
+                  </div>
+                )}
+              </Button>
+              <Button 
+                onClick={resetAccount}
+                variant="outline" 
+                className="border-red-600 text-red-400 hover:bg-red-600/10"
+              >
+                Reset Account
+              </Button>
+            </div>
           </div>
 
           {/* Account Summary */}
@@ -288,9 +349,49 @@ export default function PaperTrading() {
             </Card>
           </div>
 
+          {/* AI Mode Controls */}
+          {aiMode && (
+            <Card className="bg-blue-900/20 border-blue-400/30">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <Bot className="w-5 h-5 text-blue-400" />
+                    <div>
+                      <h3 className="font-semibold text-blue-400">AI Trading Mode Active</h3>
+                      <p className="text-sm text-gray-300">Advanced allocation algorithm is managing your paper portfolio</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Button
+                      onClick={triggerManualAiAnalysis}
+                      disabled={triggerPaperAI.isPending}
+                      className="bg-blue-600 hover:bg-blue-700"
+                      size="sm"
+                    >
+                      {triggerPaperAI.isPending ? (
+                        <div className="flex items-center space-x-2">
+                          <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                          <span>Analyzing...</span>
+                        </div>
+                      ) : (
+                        "Trigger AI Now"
+                      )}
+                    </Button>
+                    {lastAiAnalysis && (
+                      <div className="text-xs text-green-400">
+                        Last: {lastAiAnalysis.toLocaleTimeString()}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Order Entry */}
-            <Card className="bg-gray-800 border-gray-700">
+            {/* Order Entry - Only show if AI mode is off */}
+            {!aiMode && (
+              <Card className="bg-gray-800 border-gray-700">
               <CardHeader>
                 <CardTitle className="flex items-center space-x-2">
                   <Target className="w-5 h-5 text-blue-400" />
@@ -415,9 +516,17 @@ export default function PaperTrading() {
                 </div>
               </CardContent>
             </Card>
+            )}
+
+            {/* AI Allocation Visualization - Show when AI mode is on */}
+            {aiMode && (
+              <div className="lg:col-span-3">
+                <AllocationVisualization />
+              </div>
+            )}
 
             {/* Positions and Orders */}
-            <div className="lg:col-span-2">
+            <div className={`${aiMode ? 'lg:col-span-3' : 'lg:col-span-2'}`}>
               <Tabs defaultValue="positions" className="w-full">
                 <TabsList className="grid w-full grid-cols-2 bg-gray-800">
                   <TabsTrigger value="positions">Positions ({paperPositions.length})</TabsTrigger>
