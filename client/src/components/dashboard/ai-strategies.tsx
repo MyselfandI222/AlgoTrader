@@ -75,7 +75,7 @@ export function AIStrategies() {
           </p>
           <div className="flex items-center justify-between mt-3">
             <div className="text-xs text-gray-400">
-              Risk Level: <span className="text-white font-semibold capitalize">{settings?.riskTolerance || 'moderate'}</span>
+              Risk Level: <span className="text-white font-semibold capitalize">{(settings as any)?.riskTolerance || 'moderate'}</span>
             </div>
             <Badge variant="default" className="bg-green-600">
               Auto-Trading
@@ -89,7 +89,7 @@ export function AIStrategies() {
             <span className="font-semibold">Active Strategies</span>
           </div>
           <div className="space-y-1">
-            {settings?.strategies?.map((strategy: string) => (
+            {(settings as any)?.strategies?.map((strategy: string) => (
               <div key={strategy} className="flex items-center justify-between text-sm">
                 <span className="capitalize">{strategy.replace('_', ' ')}</span>
                 <div className="w-1 h-1 rounded-full bg-green-400"></div>
@@ -103,11 +103,11 @@ export function AIStrategies() {
         <div className="p-3 bg-gray-800 rounded-lg">
           <div className="flex items-center justify-between text-sm">
             <span className="text-gray-400">Investment Amount:</span>
-            <span className="text-white font-semibold">${(settings?.investmentAmount || 100000).toLocaleString()}</span>
+            <span className="text-white font-semibold">${((settings as any)?.investmentAmount || 100000).toLocaleString()}</span>
           </div>
           <div className="flex items-center justify-between text-sm mt-1">
             <span className="text-gray-400">Max Positions:</span>
-            <span className="text-white font-semibold">{settings?.maxPositions || 6}</span>
+            <span className="text-white font-semibold">{(settings as any)?.maxPositions || 6}</span>
           </div>
         </div>
       </div>

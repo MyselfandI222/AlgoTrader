@@ -90,7 +90,7 @@ export class PortfolioTracker {
     let totalUnrealizedPnl = 0;
 
     // Calculate current position values
-    for (const [symbol, position] of this.positions.entries()) {
+    for (const [symbol, position] of Array.from(this.positions.entries())) {
       const marketStock = marketData.find(stock => stock.symbol === symbol);
       if (marketStock) {
         const currentPrice = parseFloat(marketStock.price);

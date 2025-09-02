@@ -287,13 +287,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Get AI decisions
       const decisions = await aiInvestmentEngine.analyzeMarketAndMakeDecisions();
       
-      // Execute the trades
+      // Execute the trades (only buy/sell, not hold)
       const marketData = await marketDataService.refreshMarketData();
       for (const decision of decisions) {
-        const marketStock = marketData.find(stock => stock.symbol === decision.symbol);
-        if (marketStock) {
-          const price = parseFloat(marketStock.price);
-          portfolioTracker.executeTrade(decision.symbol, decision.action, decision.quantity, price);
+        if (decision.action !== 'hold') {
+          const marketStock = marketData.find(stock => stock.symbol === decision.symbol);
+          if (marketStock) {
+            const price = parseFloat(marketStock.price);
+            portfolioTracker.executeTrade(decision.symbol, decision.action, decision.quantity, price);
+          }
         }
       }
       
@@ -352,6 +354,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('AI settings error:', error);
       res.status(500).json({ error: "Failed to fetch AI settings" });
+    }
+  });
+
+  app.get("/api/ai/allocation", async (req, res) => {
+    try {
+      const { aiInvestmentEngine } = await import("./services/ai-investment-engine.ts");
+      const { portfolioTracker } = await import("./services/portfolio-tracker.ts");
+      
+      // Get current market data for analysis
+      const { marketDataService } = await import("./services/market-data-service.ts");
+      const marketData = await marketDataService.refreshMarketData();
+      
+      // Simulate getting allocation data (in a real system, this would be stored)
+      const mockAllocationData = marketData.slice(0, 4).map((stock, index) => {
+        const weights = [0.3, 0.25, 0.25, 0.2];
+        const expectedReturns = [12.5, 8.7, 15.2, 6.8];
+        const riskScores = [6.2, 4.1, 8.5, 3.2];
+        const sectors = ['Technology', 'Technology', 'Technology', 'Consumer'];
+        const strategies = ['Momentum Growth', 'AI Value Discovery', 'Volatility Harvesting', 'Defensive AI Shield'];
+        const priorities = ['high', 'medium', 'high', 'low'];
+        
+        return {
+          symbol: stock.symbol,
+          targetWeight: weights[index],
+          currentWeight: weights[index], // Simplified
+          value: weights[index] * 100000, // Based on $100k portfolio
+          expectedReturn: expectedReturns[index],
+          riskScore: riskScores[index],
+          sector: sectors[index],
+          priority: priorities[index],
+          strategy: strategies[index]
+        };
+      });
+      
+      res.json(mockAllocationData);
+    } catch (error) {
+      console.error('AI allocation error:', error);
+      res.status(500).json({ error: "Failed to fetch AI allocation data" });
     }
   });
 

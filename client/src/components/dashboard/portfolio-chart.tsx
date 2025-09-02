@@ -25,8 +25,8 @@ export function PortfolioChart() {
   const [selectedPeriod, setSelectedPeriod] = useState<TimePeriod>('1D');
   const { data: chartData, isLoading } = usePortfolioPerformance(selectedPeriod);
   const { data: summary } = usePortfolioSummary();
-  const totalGainLoss = summary?.totalGainLoss || 0;
-  const totalGainLossPercent = summary?.totalGainLossPercent || 0;
+  const totalGainLoss = (summary as any)?.totalGainLoss || 0;
+  const totalGainLossPercent = (summary as any)?.totalGainLossPercent || 0;
   const isPositive = totalGainLoss >= 0;
 
   return (
@@ -37,7 +37,7 @@ export function PortfolioChart() {
           <div className="flex items-center space-x-4 mt-2">
             <div>
               <span className="text-sm text-gray-400">Total Value: </span>
-              <span className="text-lg font-semibold">${(summary?.totalValue || 100000).toLocaleString()}</span>
+              <span className="text-lg font-semibold">${((summary as any)?.totalValue || 100000).toLocaleString()}</span>
             </div>
             <div className={`flex items-center space-x-1 ${isPositive ? 'text-green-400' : 'text-red-400'}`}>
               <span className="text-sm">P&L: </span>
@@ -72,7 +72,7 @@ export function PortfolioChart() {
           </div>
         ) : (
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={chartData}>
+            <LineChart data={chartData as any}>
               <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
               <XAxis 
                 dataKey="time" 
