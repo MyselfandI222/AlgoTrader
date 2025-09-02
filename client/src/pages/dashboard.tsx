@@ -14,27 +14,51 @@ export default function Dashboard() {
       <Sidebar />
       <main className="flex-1 overflow-auto">
         <TopBar />
-        <div className="p-6 space-y-6">
-          <StatsOverview />
-          
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2">
-              <PortfolioChart />
-            </div>
-            <AIStrategies />
+        <div className="p-6 space-y-8">
+          {/* Welcome Header */}
+          <div className="mb-8">
+            <h1 className="text-3xl font-bold text-white mb-2">Investment Dashboard</h1>
+            <p className="text-gray-400">AI-powered trading platform with automated investment strategies</p>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2">
+          {/* Key Stats - Clean and prominent */}
+          <StatsOverview />
+          
+          {/* Main Content Area */}
+          <div className="grid grid-cols-1 xl:grid-cols-4 gap-8">
+            {/* Portfolio Performance - Takes more space */}
+            <div className="xl:col-span-3">
+              <PortfolioChart />
+            </div>
+            
+            {/* AI Control Panel - Compact side panel */}
+            <div className="xl:col-span-1">
+              <AIStrategies />
+            </div>
+          </div>
+
+          {/* Secondary Information */}
+          <div className="grid grid-cols-1 xl:grid-cols-4 gap-8">
+            {/* Recent Activity */}
+            <div className="xl:col-span-2">
               <RecentTrades />
             </div>
-            <div className="space-y-6">
+            
+            {/* Market Status */}
+            <div className="xl:col-span-1">
               <MarketDataStatus />
+            </div>
+            
+            {/* Risk Overview */}
+            <div className="xl:col-span-1">
               <RiskAnalysis />
             </div>
           </div>
 
-          <MarketWatch />
+          {/* Market Overview - Full width at bottom */}
+          <div className="mt-8">
+            <MarketWatch />
+          </div>
         </div>
       </main>
     </div>
