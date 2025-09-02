@@ -420,7 +420,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       res.json({
         balance: paperAIEngine.getPaperBalance(),
-        positions: Array.from(paperAIEngine.getPaperPositions.entries()).map(([symbol, pos]) => ({
+        positions: Array.from(paperAIEngine.getPaperPositions().entries()).map(([symbol, pos]) => ({
           symbol,
           ...pos
         })),
@@ -429,6 +429,115 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('Paper AI status error:', error);
       res.status(500).json({ error: "Failed to fetch Paper AI status" });
+    }
+  });
+
+  app.post("/api/paper-ai/settings", async (req, res) => {
+    try {
+      const { paperAIEngine } = await import("./services/paper-ai-engine.ts");
+      paperAIEngine.updateSettings(req.body);
+      res.json({ success: true, settings: paperAIEngine.getSettings() });
+    } catch (error) {
+      console.error('Paper AI settings error:', error);
+      res.status(500).json({ error: "Failed to update Paper AI settings" });
+    }
+  });
+
+  app.get("/api/paper-ai/settings", async (req, res) => {
+    try {
+      const { paperAIEngine } = await import("./services/paper-ai-engine.ts");
+      res.json(paperAIEngine.getSettings());
+    } catch (error) {
+      console.error('Paper AI settings error:', error);
+      res.status(500).json({ error: "Failed to fetch Paper AI settings" });
+    }
+  });
+
+  app.get("/api/paper-ai/comparisons", async (req, res) => {
+    try {
+      // Mock strategy comparison data for now
+      const mockStrategies = [
+        {
+          id: "conservative-strategy",
+          name: "Conservative Growth",
+          settings: {
+            riskTolerance: "conservative",
+            strategies: ["value", "defensive"],
+            maxPositions: 4
+          },
+          performance: {
+            totalReturn: 3200,
+            totalReturnPercent: 3.2,
+            maxDrawdown: -2.1,
+            sharpeRatio: 1.4,
+            winRate: 72.5,
+            totalTrades: 18,
+            avgTradeReturn: 1.8,
+            volatility: 8.2
+          },
+          chartData: Array.from({ length: 30 }, (_, i) => ({
+            time: new Date(Date.now() - (29 - i) * 24 * 60 * 60 * 1000).toLocaleDateString(),
+            value: 100000 + (i * 100) + Math.random() * 500,
+            strategy: "Conservative Growth"
+          })),
+          lastUpdated: new Date()
+        },
+        {
+          id: "aggressive-strategy",
+          name: "Aggressive Momentum",
+          settings: {
+            riskTolerance: "aggressive",
+            strategies: ["momentum", "volatility"],
+            maxPositions: 8
+          },
+          performance: {
+            totalReturn: 8750,
+            totalReturnPercent: 8.75,
+            maxDrawdown: -12.3,
+            sharpeRatio: 1.1,
+            winRate: 58.2,
+            totalTrades: 42,
+            avgTradeReturn: 3.2,
+            volatility: 18.7
+          },
+          chartData: Array.from({ length: 30 }, (_, i) => ({
+            time: new Date(Date.now() - (29 - i) * 24 * 60 * 60 * 1000).toLocaleDateString(),
+            value: 100000 + (i * 200) + Math.random() * 1000 - 500,
+            strategy: "Aggressive Momentum"
+          })),
+          lastUpdated: new Date()
+        },
+        {
+          id: "balanced-strategy",
+          name: "Balanced AI Mix",
+          settings: {
+            riskTolerance: "moderate",
+            strategies: ["momentum", "value", "sentiment"],
+            maxPositions: 6
+          },
+          performance: {
+            totalReturn: 5480,
+            totalReturnPercent: 5.48,
+            maxDrawdown: -6.8,
+            sharpeRatio: 1.7,
+            winRate: 64.1,
+            totalTrades: 28,
+            avgTradeReturn: 2.4,
+            volatility: 12.3
+          },
+          chartData: Array.from({ length: 30 }, (_, i) => ({
+            time: new Date(Date.now() - (29 - i) * 24 * 60 * 60 * 1000).toLocaleDateString(),
+            value: 100000 + (i * 150) + Math.random() * 800 - 200,
+            strategy: "Balanced AI Mix"
+          })),
+          lastUpdated: new Date()
+        }
+      ];
+
+      res.json(mockStrategies);
+    } catch (error) {
+      console.error('Paper AI comparisons error:', error);
+      res.status(500).json({ error: "Failed to fetch Paper AI comparisons" });
     }
   });
 

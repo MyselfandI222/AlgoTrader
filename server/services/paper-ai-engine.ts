@@ -2,7 +2,7 @@
  * Paper Trading AI Engine - Uses the same advanced allocation algorithm for paper trading
  */
 
-import { aiInvestmentEngine, AIInvestmentDecision } from './ai-investment-engine.ts';
+import { aiInvestmentEngine, AIInvestmentDecision, AISettings } from './ai-investment-engine.ts';
 import { marketDataService } from './market-data-service.ts';
 
 interface PaperTrade {
@@ -20,6 +20,16 @@ export class PaperAIEngine {
   private paperBalance: number = 100000;
   private paperPositions: Map<string, { quantity: number; averagePrice: number }> = new Map();
   private paperTrades: PaperTrade[] = [];
+  private paperSettings: AISettings | null = null;
+
+  updateSettings(settings: AISettings): void {
+    this.paperSettings = settings;
+    console.log('🧪 Paper AI settings updated:', settings);
+  }
+
+  getSettings(): AISettings | null {
+    return this.paperSettings;
+  }
 
   async analyzeAndExecutePaperTrades(): Promise<{
     decisions: AIInvestmentDecision[];

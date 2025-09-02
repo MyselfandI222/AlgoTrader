@@ -9,8 +9,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useMarketData, useStockQuote } from "@/hooks/use-market-data";
 import { AllocationVisualization } from "@/components/ai/allocation-visualization";
+import { PaperAISettings } from "@/components/paper-trading/paper-ai-settings";
+import { StrategyComparison } from "@/components/paper-trading/strategy-comparison";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { DollarSign, TrendingUp, TrendingDown, Clock, Target, Zap, AlertCircle, Bot, Brain } from "lucide-react";
+import { DollarSign, TrendingUp, TrendingDown, Clock, Target, Zap, AlertCircle, Bot, Brain, Settings, BarChart } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface PaperPosition {
@@ -57,6 +59,8 @@ export default function PaperTrading() {
   const [paperTrades, setPaperTrades] = useState<PaperTrade[]>([]);
   const [aiMode, setAiMode] = useState(false);
   const [lastAiAnalysis, setLastAiAnalysis] = useState<Date | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
+  const [showComparison, setShowComparison] = useState(false);
   
   // Trading form state
   const [selectedSymbol, setSelectedSymbol] = useState("AAPL");
@@ -266,6 +270,20 @@ export default function PaperTrading() {
               </div>
             </div>
             <div className="flex items-center space-x-2">
+              <Button
+                onClick={() => setShowComparison(true)}
+                className="bg-purple-600 hover:bg-purple-700"
+              >
+                <BarChart className="w-4 h-4 mr-2" />
+                Compare Strategies
+              </Button>
+              <Button
+                onClick={() => setShowSettings(true)}
+                className="bg-yellow-600 hover:bg-yellow-700"
+              >
+                <Settings className="w-4 h-4 mr-2" />
+                AI Settings
+              </Button>
               <Button
                 onClick={() => setAiMode(!aiMode)}
                 className={`${aiMode ? 'bg-green-600 hover:bg-green-700' : 'bg-gray-600 hover:bg-gray-700'}`}
@@ -646,6 +664,32 @@ export default function PaperTrading() {
           </div>
         </div>
       </main>
+
+      {/* Settings Modal */}
+      {showSettings && (
+        <PaperAISettings onClose={() => setShowSettings(false)} />
+      )}
+
+      {/* Strategy Comparison Modal */}
+      {showComparison && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-gray-800 border border-gray-700 rounded-lg w-full max-w-7xl max-h-[90vh] overflow-y-auto m-4">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-2xl font-bold">Strategy Comparison</h2>
+                <Button
+                  onClick={() => setShowComparison(false)}
+                  variant="outline"
+                  className="border-gray-600 text-gray-400 hover:bg-gray-700"
+                >
+                  Close
+                </Button>
+              </div>
+              <StrategyComparison />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
