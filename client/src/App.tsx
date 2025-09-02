@@ -10,6 +10,7 @@ import Trading from "@/pages/trading";
 import Strategies from "@/pages/strategies";
 import Analytics from "@/pages/analytics";
 import History from "@/pages/history";
+import PaperTrading from "@/pages/paper-trading";
 import Account from "@/pages/account";
 
 function Router() {
@@ -22,6 +23,7 @@ function Router() {
       <Route path="/strategies" component={Strategies} />
       <Route path="/analytics" component={Analytics} />
       <Route path="/history" component={History} />
+      <Route path="/paper-trading" component={PaperTrading} />
       <Route path="/account" component={Account} />
       <Route component={NotFound} />
     </Switch>

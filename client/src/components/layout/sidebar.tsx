@@ -7,7 +7,8 @@ import {
   BarChart3, 
   History, 
   Settings,
-  Activity
+  Activity,
+  Target
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -18,6 +19,7 @@ const navigation = [
   { name: "AI Strategies", href: "/strategies", icon: Bot },
   { name: "Performance", href: "/analytics", icon: BarChart3 },
   { name: "Investment History", href: "/history", icon: History },
+  { name: "Paper Trading", href: "/paper-trading", icon: Target },
   { name: "Account", href: "/account", icon: Settings },
 ];
 

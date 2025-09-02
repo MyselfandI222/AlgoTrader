@@ -7,7 +7,6 @@ import { RecentTrades } from "@/components/dashboard/recent-trades";
 import { RiskAnalysis } from "@/components/dashboard/risk-analysis";
 import { MarketWatch } from "@/components/dashboard/market-watch";
 import { MarketDataStatus } from "@/components/market/market-data-status";
-import { PaperTradingSidebar } from "@/components/trading/paper-trading-sidebar";
 
 export default function Dashboard() {
   return (
@@ -15,7 +14,7 @@ export default function Dashboard() {
       <Sidebar />
       <main className="flex-1 overflow-auto">
         <TopBar />
-        <div className="p-6 space-y-6 pr-84">
+        <div className="p-6 space-y-6">
           <StatsOverview />
           
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -38,7 +37,6 @@ export default function Dashboard() {
           <MarketWatch />
         </div>
       </main>
-      <PaperTradingSidebar />
     </div>
   );
 }
