@@ -3,10 +3,17 @@
  * Supports multiple APIs with fallback capabilities
  */
 
+interface HistoricalPrice {
+  date: string;
+  price: number;
+  volume: number;
+}
+
 interface MarketDataProvider {
   name: string;
   getQuote(symbol: string): Promise<StockQuote>;
   getMultipleQuotes(symbols: string[]): Promise<StockQuote[]>;
+  getHistoricalData?(symbol: string, period: string): Promise<HistoricalPrice[]>;
   isConfigured(): boolean;
 }
 
@@ -200,6 +207,58 @@ export class TwelvedataProvider implements MarketDataProvider {
 
   isConfigured(): boolean {
     return !!this.apiKey;
+  }
+
+  async getHistoricalData(symbol: string, period: string): Promise<HistoricalPrice[]> {
+    if (!this.isConfigured()) {
+      throw new Error("Twelvedata API key not configured");
+    }
+
+    try {
+      // Map period to Twelvedata format
+      const periodMap: Record<string, { interval: string, outputsize: string }> = {
+        '1D': { interval: '1h', outputsize: '24' },
+        '7D': { interval: '1day', outputsize: '7' },
+        '30D': { interval: '1day', outputsize: '30' },
+        '90D': { interval: '1day', outputsize: '90' },
+        '1Y': { interval: '1week', outputsize: '52' },
+        '2Y': { interval: '1month', outputsize: '24' }
+      };
+
+      const config = periodMap[period] || periodMap['30D'];
+      
+      const response = await fetch(
+        `${this.baseUrl}/time_series?symbol=${symbol}&interval=${config.interval}&outputsize=${config.outputsize}&apikey=${this.apiKey}`
+      );
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      
+      if (data.status === "error") {
+        throw new Error(`API Error: ${data.message}`);
+      }
+
+      const historicalData: HistoricalPrice[] = [];
+      
+      if (data.values && Array.isArray(data.values)) {
+        // Sort by date ascending (oldest first)
+        data.values.reverse().forEach((item: any) => {
+          historicalData.push({
+            date: item.datetime,
+            price: parseFloat(item.close) || 0,
+            volume: parseInt(item.volume) || 0
+          });
+        });
+      }
+      
+      return historicalData;
+    } catch (error) {
+      console.error(`Twelvedata historical data error for ${symbol}:`, error);
+      throw error;
+    }
   }
 
   async getQuote(symbol: string): Promise<StockQuote> {
@@ -476,6 +535,76 @@ export class MarketDataService {
   async refreshMarketData(): Promise<StockQuote[]> {
     const symbols = ['AAPL', 'TSLA', 'NVDA', 'MSFT', 'AMZN', 'GOOGL'];
     return this.getMultipleQuotes(symbols);
+  }
+
+  async getHistoricalData(symbol: string, period: string): Promise<HistoricalPrice[]> {
+    for (let i = 0; i < this.providers.length; i++) {
+      const provider = this.providers[(this.currentProviderIndex + i) % this.providers.length];
+      
+      if (!provider.isConfigured() || !provider.getHistoricalData) {
+        continue;
+      }
+
+      try {
+        console.log(`Fetching historical data for ${symbol} (${period}) using ${provider.name}`);
+        const data = await provider.getHistoricalData(symbol, period);
+        return data;
+      } catch (error) {
+        console.error(`Provider ${provider.name} historical data failed for ${symbol}:`, error);
+        // Continue to next provider
+      }
+    }
+    
+    // Fallback to mock historical data if all providers fail
+    return this.generateMockHistoricalData(symbol, period);
+  }
+
+  private generateMockHistoricalData(symbol: string, period: string): HistoricalPrice[] {
+    // Base prices for common stocks (same as MockProvider)
+    const basePrices: Record<string, number> = {
+      'AAPL': 175,
+      'TSLA': 250,
+      'NVDA': 890,
+      'MSFT': 415,
+      'AMZN': 180,
+      'GOOGL': 170,
+      'META': 485,
+      'NFLX': 450,
+      'AMD': 150,
+      'INTC': 45
+    };
+    const basePrice = basePrices[symbol] || 100;
+    const data: HistoricalPrice[] = [];
+    
+    const periodMap: Record<string, { days: number, points: number }> = {
+      '1D': { days: 1, points: 24 },
+      '7D': { days: 7, points: 7 },
+      '30D': { days: 30, points: 30 },
+      '90D': { days: 90, points: 30 },
+      '1Y': { days: 365, points: 52 },
+      '2Y': { days: 730, points: 24 }
+    };
+
+    const config = periodMap[period] || periodMap['30D'];
+    const now = new Date();
+
+    for (let i = config.points; i >= 0; i--) {
+      const date = new Date(now);
+      date.setDate(date.getDate() - Math.floor((i * config.days) / config.points));
+      
+      // Generate seeded random price based on symbol and date for consistency
+      const seed = symbol.charCodeAt(0) + date.getTime() / 86400000;
+      const variance = Math.sin(seed) * 0.05; // ±5% variance
+      const price = basePrice * (1 + variance - (i * 0.001));
+      
+      data.push({
+        date: date.toISOString(),
+        price: Math.max(price, basePrice * 0.5), // Prevent negative prices
+        volume: Math.floor(Math.abs(Math.sin(seed * 2)) * 5000000) + 1000000
+      });
+    }
+    
+    return data;
   }
 }
 

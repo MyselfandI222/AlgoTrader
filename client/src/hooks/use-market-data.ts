@@ -59,3 +59,12 @@ export function useRefreshMarketData() {
     }
   });
 }
+
+export function useHistoricalData(symbol: string, period: string) {
+  return useQuery<{date: string, price: number, volume: number}[]>({
+    queryKey: ["/api/market/historical", symbol, period],
+    staleTime: 300000, // Historical data doesn't change often - 5 minutes
+    gcTime: 600000, // Keep in cache for 10 minutes
+    enabled: !!symbol && !!period,
+  });
+}

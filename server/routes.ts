@@ -263,6 +263,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Historical data endpoint
+  app.get("/api/market/historical/:symbol/:period", async (req, res) => {
+    try {
+      const { symbol, period } = req.params;
+      const historicalData = await marketDataService.getHistoricalData(symbol, period);
+      res.json(historicalData);
+    } catch (error) {
+      console.error(`Historical data error for ${req.params.symbol}:`, error);
+      res.status(500).json({ error: "Failed to fetch historical data" });
+    }
+  });
+
   // Generic market data routes (less specific routes last)
   app.get("/api/market/:symbol", async (req, res) => {
     const data = await storage.getMarketData(req.params.symbol);

@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { useStockQuote } from "@/hooks/use-market-data";
+import { useStockQuote, useHistoricalData } from "@/hooks/use-market-data";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from "recharts";
 import { TrendingUp, TrendingDown, DollarSign, BarChart3, Clock, X } from "lucide-react";
 import { useState } from "react";
@@ -21,6 +21,7 @@ type TimePeriod = '1D' | '7D' | '30D' | '90D' | '1Y' | '2Y';
 export function StockDetailModal({ symbol, isOpen, onClose }: StockDetailModalProps) {
   const { data: stockData, isLoading } = useStockQuote(symbol || "");
   const [selectedPeriod, setSelectedPeriod] = useState<TimePeriod>('30D');
+  const { data: historicalData, isLoading: isHistoricalLoading } = useHistoricalData(symbol || "", selectedPeriod);
 
   if (!symbol) return null;
 
@@ -98,7 +99,19 @@ export function StockDetailModal({ symbol, isOpen, onClose }: StockDetailModalPr
     return data;
   };
 
-  const historicalData = generateHistoricalData();
+  // Use real historical data if available, otherwise generate mock data
+  const chartData = historicalData && historicalData.length > 0 
+    ? historicalData.map(item => ({
+        date: selectedPeriod === '1D' 
+          ? new Date(item.date).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+          : selectedPeriod === '1Y' || selectedPeriod === '2Y'
+          ? new Date(item.date).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+          : new Date(item.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        price: item.price,
+        volume: item.volume
+      }))
+    : generateHistoricalData();
+  
   const isPositive = parseFloat(stockData?.change || "0") >= 0;
 
   return (
@@ -217,44 +230,53 @@ export function StockDetailModal({ symbol, isOpen, onClose }: StockDetailModalPr
                     </div>
                   </CardHeader>
                   <CardContent>
-                    <ResponsiveContainer width="100%" height={400}>
-                      <AreaChart data={historicalData}>
-                        <defs>
-                          <linearGradient id="colorPrice" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.8}/>
-                            <stop offset="95%" stopColor="#3B82F6" stopOpacity={0.1}/>
-                          </linearGradient>
-                        </defs>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                        <XAxis 
-                          dataKey="date" 
-                          stroke="#9CA3AF"
-                          tick={{ fill: '#9CA3AF' }}
-                        />
-                        <YAxis 
-                          stroke="#9CA3AF"
-                          tick={{ fill: '#9CA3AF' }}
-                          domain={['dataMin - 5', 'dataMax + 5']}
-                        />
-                        <Tooltip 
-                          contentStyle={{ 
-                            backgroundColor: '#1F2937', 
-                            border: '1px solid #374151',
-                            borderRadius: '8px',
-                            color: '#F9FAFB'
-                          }}
-                          formatter={(value: any) => [`$${value.toFixed(2)}`, 'Price']}
-                        />
-                        <Area
-                          type="monotone"
-                          dataKey="price"
-                          stroke="#3B82F6"
-                          strokeWidth={2}
-                          fillOpacity={1}
-                          fill="url(#colorPrice)"
-                        />
-                      </AreaChart>
-                    </ResponsiveContainer>
+                    {isHistoricalLoading ? (
+                      <div className="flex items-center justify-center h-96">
+                        <div className="text-center">
+                          <div className="animate-spin h-8 w-8 border-b-2 border-blue-400 rounded-full mx-auto mb-4"></div>
+                          <p className="text-gray-400">Loading real market data...</p>
+                        </div>
+                      </div>
+                    ) : (
+                      <ResponsiveContainer width="100%" height={400}>
+                        <AreaChart data={chartData}>
+                          <defs>
+                            <linearGradient id="colorPrice" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.8}/>
+                              <stop offset="95%" stopColor="#3B82F6" stopOpacity={0.1}/>
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                          <XAxis 
+                            dataKey="date" 
+                            stroke="#9CA3AF"
+                            tick={{ fill: '#9CA3AF' }}
+                          />
+                          <YAxis 
+                            stroke="#9CA3AF"
+                            tick={{ fill: '#9CA3AF' }}
+                            domain={['dataMin - 5', 'dataMax + 5']}
+                          />
+                          <Tooltip 
+                            contentStyle={{ 
+                              backgroundColor: '#1F2937', 
+                              border: '1px solid #374151',
+                              borderRadius: '8px',
+                              color: '#F9FAFB'
+                            }}
+                            formatter={(value: any) => [`$${value.toFixed(2)}`, 'Price']}
+                          />
+                          <Area
+                            type="monotone"
+                            dataKey="price"
+                            stroke="#3B82F6"
+                            strokeWidth={2}
+                            fillOpacity={1}
+                            fill="url(#colorPrice)"
+                          />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    )}
                   </CardContent>
                 </Card>
               </TabsContent>
@@ -265,36 +287,45 @@ export function StockDetailModal({ symbol, isOpen, onClose }: StockDetailModalPr
                     <CardTitle className="text-white">Volume Analysis</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <ResponsiveContainer width="100%" height={400}>
-                      <LineChart data={historicalData}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                        <XAxis 
-                          dataKey="date" 
-                          stroke="#9CA3AF"
-                          tick={{ fill: '#9CA3AF' }}
-                        />
-                        <YAxis 
-                          stroke="#9CA3AF"
-                          tick={{ fill: '#9CA3AF' }}
-                        />
-                        <Tooltip 
-                          contentStyle={{ 
-                            backgroundColor: '#1F2937', 
-                            border: '1px solid #374151',
-                            borderRadius: '8px',
-                            color: '#F9FAFB'
-                          }}
-                          formatter={(value: any) => [value.toLocaleString(), 'Volume']}
-                        />
-                        <Line
-                          type="monotone"
-                          dataKey="volume"
-                          stroke="#10B981"
-                          strokeWidth={2}
-                          dot={false}
-                        />
-                      </LineChart>
-                    </ResponsiveContainer>
+                    {isHistoricalLoading ? (
+                      <div className="flex items-center justify-center h-96">
+                        <div className="text-center">
+                          <div className="animate-spin h-8 w-8 border-b-2 border-green-400 rounded-full mx-auto mb-4"></div>
+                          <p className="text-gray-400">Loading volume data...</p>
+                        </div>
+                      </div>
+                    ) : (
+                      <ResponsiveContainer width="100%" height={400}>
+                        <LineChart data={chartData}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                          <XAxis 
+                            dataKey="date" 
+                            stroke="#9CA3AF"
+                            tick={{ fill: '#9CA3AF' }}
+                          />
+                          <YAxis 
+                            stroke="#9CA3AF"
+                            tick={{ fill: '#9CA3AF' }}
+                          />
+                          <Tooltip 
+                            contentStyle={{ 
+                              backgroundColor: '#1F2937', 
+                              border: '1px solid #374151',
+                              borderRadius: '8px',
+                              color: '#F9FAFB'
+                            }}
+                            formatter={(value: any) => [value.toLocaleString(), 'Volume']}
+                          />
+                          <Line
+                            type="monotone"
+                            dataKey="volume"
+                            stroke="#10B981"
+                            strokeWidth={2}
+                            dot={false}
+                          />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    )}
                   </CardContent>
                 </Card>
               </TabsContent>
