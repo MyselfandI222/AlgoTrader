@@ -165,3 +165,14 @@
 .danger-bg-light {
   background-color: hsl(0 84% 60% / 0.2);
 }
+
+/* Paper trading sidebar spacing */
+.pr-84 {
+  padding-right: 21rem; /* 336px to accommodate 320px sidebar + padding */
+}
+
+/* Vertical text for collapsed sidebar button */
+.writing-mode-vertical {
+  writing-mode: vertical-lr;
+  text-orientation: mixed;
+}
