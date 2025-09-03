@@ -545,6 +545,78 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Advanced Risk Management API endpoints
+  app.get("/api/risk/config", async (req, res) => {
+    try {
+      const { riskExitEngine } = await import("./services/risk-exit-engine.ts");
+      res.json(riskExitEngine.getConfig());
+    } catch (error) {
+      console.error('Risk config error:', error);
+      res.status(500).json({ error: "Failed to fetch risk configuration" });
+    }
+  });
+
+  app.post("/api/risk/config", async (req, res) => {
+    try {
+      const { riskExitEngine } = await import("./services/risk-exit-engine.ts");
+      riskExitEngine.updateConfig(req.body);
+      res.json({ success: true, config: riskExitEngine.getConfig() });
+    } catch (error) {
+      console.error('Risk config update error:', error);
+      res.status(500).json({ error: "Failed to update risk configuration" });
+    }
+  });
+
+  app.get("/api/risk/analysis", async (req, res) => {
+    try {
+      const { marketDataService } = await import("./services/market-data-service.ts");
+      const { riskExitEngine } = await import("./services/risk-exit-engine.ts");
+      
+      const marketData = await marketDataService.refreshMarketData();
+      
+      // Generate mock risk analysis for demo
+      const riskAnalysis = marketData.slice(0, 3).map((stock, index) => {
+        const changePercent = parseFloat(stock.changePercent);
+        const momentum = Math.abs(changePercent) > 3 ? Math.random() * 0.8 : Math.random() * 0.3;
+        const volExpansion = Math.abs(changePercent) > 5 ? Math.random() * 0.9 : Math.random() * 0.2;
+        const rsiStress = changePercent < -5 ? Math.random() * 0.7 : Math.random() * 0.3;
+        const structureBreak = changePercent < -3 ? Math.random() * 0.8 : Math.random() * 0.2;
+        const drawdown = Math.random() * 0.4;
+        const time = Math.random() * 0.3;
+        
+        const factors = { momentum, volExpansion, rsiStress, structureBreak, drawdown, time };
+        const config = riskExitEngine.getConfig();
+        
+        const compositeScore = 
+          config.wMomentum * momentum +
+          config.wVolExpansion * volExpansion +
+          config.wRsiStress * rsiStress +
+          config.wStructureBreak * structureBreak +
+          config.wDrawdown * drawdown +
+          config.wTime * time;
+          
+        const action = compositeScore >= config.exitThreshold ? 'exit' : 'hold';
+        const reason = action === 'exit' 
+          ? `High composite risk score: ${(compositeScore * 100).toFixed(1)}%`
+          : `Risk manageable: ${(compositeScore * 100).toFixed(1)}% risk score`;
+        
+        return {
+          symbol: stock.symbol,
+          action,
+          reason,
+          confidence: action === 'exit' ? compositeScore : 1 - compositeScore,
+          factors,
+          compositeScore: Math.max(0, Math.min(1, compositeScore))
+        };
+      });
+      
+      res.json(riskAnalysis);
+    } catch (error) {
+      console.error('Risk analysis error:', error);
+      res.status(500).json({ error: "Failed to perform risk analysis" });
+    }
+  });
+
   // Paper Trading AI endpoints
   app.post("/api/paper-ai/analyze-and-invest", async (req, res) => {
     try {

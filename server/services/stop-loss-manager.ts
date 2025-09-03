@@ -4,6 +4,7 @@
  */
 
 import { marketDataService } from './market-data-service.ts';
+import { riskExitEngine, Position as RiskPosition } from './risk-exit-engine.ts';
 
 export interface StopLossOrder {
   id: string;
@@ -32,6 +33,9 @@ export interface StopLossSettings {
   maxLossPerPosition: number; // Maximum loss per position in dollars
   emergencyStopPercent: number; // Emergency stop for extreme losses
   autoRebalanceAfterTrigger: boolean; // Auto-rebalance portfolio after stop triggers
+  // Advanced Risk Management
+  enableAdvancedRiskEngine: boolean; // Enable multi-factor risk analysis
+  riskExitThreshold: number; // 0.5-0.9, composite risk score threshold for exit
 }
 
 export class StopLossManager {
@@ -102,19 +106,69 @@ export class StopLossManager {
       const marketData = await marketDataService.refreshMarketData();
       const marketPrices = new Map(marketData.map(stock => [stock.symbol, parseFloat(stock.price)]));
 
-      for (const [orderId, order] of this.activeOrders.entries()) {
+      for (const [orderId, order] of Array.from(this.activeOrders.entries())) {
         const currentPrice = marketPrices.get(order.symbol);
         if (!currentPrice) continue;
 
-        const triggerResult = this.checkOrderTrigger(order, currentPrice);
-        if (triggerResult.shouldTrigger) {
-          await this.triggerOrder(order, triggerResult.triggerType, triggerResult.reason, currentPrice);
-        } else if (order.trailingStop) {
-          this.updateTrailingStop(order, currentPrice);
+        // Use advanced risk engine if enabled
+        if (this.settings.enableAdvancedRiskEngine) {
+          await this.checkAdvancedRiskTrigger(order, currentPrice);
+        } else {
+          const triggerResult = this.checkOrderTrigger(order, currentPrice);
+          if (triggerResult.shouldTrigger) {
+            await this.triggerOrder(order, triggerResult.triggerType || 'stop_loss', triggerResult.reason, currentPrice);
+          } else if (order.trailingStop) {
+            this.updateTrailingStop(order, currentPrice);
+          }
         }
       }
     } catch (error) {
       console.error('Error checking stop-loss orders:', error);
+    }
+  }
+
+  // Advanced risk-based trigger checking
+  private async checkAdvancedRiskTrigger(order: StopLossOrder, currentPrice: number): Promise<void> {
+    try {
+      // Convert to risk engine position format
+      const riskPosition: RiskPosition = {
+        symbol: order.symbol,
+        side: 'long', // Assuming long positions for now
+        qty: order.quantity,
+        entryPrice: order.originalPrice,
+        entryTime: order.createdAt,
+        riskPerShare: (order.originalPrice - order.stopLossPrice),
+        stopPrice: order.stopLossPrice,
+        takeProfitLevels: order.takeProfitPrice ? [((order.takeProfitPrice - order.originalPrice) / (order.originalPrice - order.stopLossPrice))] : [1.5, 2.0],
+        scaleOutPercents: [0.5, 0.25],
+        barsHeld: Math.floor((Date.now() - order.createdAt.getTime()) / (1000 * 60 * 60)), // Convert to hours as bars
+        peakUnrealized: 0,
+        realizedScaleouts: 0,
+        extraState: {}
+      };
+
+      const analysis = await riskExitEngine.analyzePosition(riskPosition);
+      
+      if (analysis.action === 'exit') {
+        await this.triggerOrder(order, 'stop_loss', `Advanced Risk Exit: ${analysis.reason}`, currentPrice);
+      } else if (analysis.action === 'scale_out' && analysis.scaleOutInfo) {
+        // Handle scale-out logic
+        console.log(`🎯 Scale-out triggered for ${order.symbol}: ${analysis.scaleOutInfo.qty} shares at ${analysis.scaleOutInfo.targetR}R`);
+        // In a real system, you'd execute a partial sale here
+      } else {
+        // Update stop price if new one is provided
+        if (analysis.newStopPrice && analysis.newStopPrice !== order.stopLossPrice) {
+          order.stopLossPrice = analysis.newStopPrice;
+          console.log(`📈 Updated stop for ${order.symbol}: New stop at $${analysis.newStopPrice.toFixed(2)}`);
+        }
+      }
+    } catch (error) {
+      console.error('Advanced risk analysis error:', error);
+      // Fall back to simple trigger check
+      const triggerResult = this.checkOrderTrigger(order, currentPrice);
+      if (triggerResult.shouldTrigger) {
+        await this.triggerOrder(order, triggerResult.triggerType || 'stop_loss', triggerResult.reason, currentPrice);
+      }
     }
   }
 
@@ -332,7 +386,10 @@ export const DEFAULT_STOP_LOSS_SETTINGS: StopLossSettings = {
   defaultTrailingStopPercent: 10, // 10% trailing stop
   maxLossPerPosition: 5000, // $5,000 max loss per position
   emergencyStopPercent: 20, // 20% emergency stop
-  autoRebalanceAfterTrigger: true
+  autoRebalanceAfterTrigger: true,
+  // Advanced Risk Management
+  enableAdvancedRiskEngine: true,
+  riskExitThreshold: 0.70 // 70% composite risk score triggers exit
 };
 
 // Global stop-loss manager instance

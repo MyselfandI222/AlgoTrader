@@ -1,0 +1,394 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Dict, Optional, Literal, Tuple
+import numpy as np
+import pandas as pd
+
+
+Side = Literal["long", "short"]
+
+
+# ---------- Core indicator helpers (no external TA libs) ----------
+def wilder_rsi(close: pd.Series, length: int = 14) -> pd.Series:
+    delta = close.diff()
+    up = np.where(delta > 0, delta, 0.0)
+    down = np.where(delta < 0, -delta, 0.0)
+
+    up = pd.Series(up, index=close.index)
+    down = pd.Series(down, index=close.index)
+
+    # Wilder smoothing
+    ema_up = up.ewm(alpha=1/length, adjust=False).mean()
+    ema_down = down.ewm(alpha=1/length, adjust=False).mean()
+    rs = ema_up / (ema_down.replace(0, np.nan))
+    rsi = 100 - (100 / (1 + rs))
+    return rsi.fillna(50.0)
+
+
+def true_range(high: pd.Series, low: pd.Series, close: pd.Series) -> pd.Series:
+    prev_close = close.shift(1)
+    tr = pd.concat([
+        (high - low).abs(),
+        (high - prev_close).abs(),
+        (low - prev_close).abs()
+    ], axis=1).max(axis=1)
+    return tr
+
+
+def atr(df: pd.DataFrame, length: int = 14) -> pd.Series:
+    tr = true_range(df["high"], df["low"], df["close"])
+    # Wilder smoothing
+    return tr.ewm(alpha=1/length, adjust=False).mean()
+
+
+def ema(series: pd.Series, length: int) -> pd.Series:
+    return series.ewm(span=length, adjust=False).mean()
+
+
+def chandelier_exit_high(df: pd.DataFrame, atr_mult: float = 3.0, lookback: int = 22) -> pd.Series:
+    a = atr(df, length=lookback)
+    hh = df["high"].rolling(lookback).max()
+    return (hh - atr_mult * a).rename("chandelier_long")
+
+
+def chandelier_exit_low(df: pd.DataFrame, atr_mult: float = 3.0, lookback: int = 22) -> pd.Series:
+    a = atr(df, length=lookback)
+    ll = df["low"].rolling(lookback).min()
+    return (ll + atr_mult * a).rename("chandelier_short")
+
+
+# ---------- Position state ----------
+@dataclass
+class Position:
+    symbol: str
+    side: Side
+    qty: float
+    entry_price: float
+    entry_time: pd.Timestamp
+    risk_per_share: float  # e.g., initial ATR * k; used for R-multiples
+    stop_price: float      # active stop (will trail)
+    take_profit_levels: Tuple[float, ...] = field(default_factory=lambda: (1.0, 2.0))  # in R
+    scale_out_percents: Tuple[float, ...] = field(default_factory=lambda: (0.5, 0.25))
+    bars_held: int = 0
+    peak_unrealized: float = 0.0  # max in-R since entry
+    realized_scaleouts: int = 0   # how many TP levels hit
+    extra_state: Dict = field(default_factory=dict)
+
+    def direction(self) -> int:
+        return 1 if self.side == "long" else -1
+
+    def r_multiple(self, last_price: float) -> float:
+        if self.risk_per_share <= 0:
+            return 0.0
+        move = (last_price - self.entry_price) * self.direction()
+        return move / self.risk_per_share
+
+
+# ---------- Config ----------
+@dataclass
+class RiskConfig:
+    # Stops
+    initial_atr_mult: float = 2.0
+    chandelier_mult: float = 3.0
+    chandelier_lookback: int = 22
+
+    # Factors (0..1 weights sum can be >1; we clamp final score)
+    w_momentum: float = 0.22
+    w_vol_expansion: float = 0.18
+    w_rsi_stress: float = 0.18
+    w_structure_break: float = 0.22
+    w_drawdown: float = 0.12
+    w_time: float = 0.08
+
+    # Threshold for composite exit
+    exit_threshold: float = 0.70  # >= triggers exit
+
+    # Momentum settings
+    ema_fast: int = 8
+    ema_slow: int = 21
+
+    # Vol expansion: ATR percentile vs lookback window
+    vol_window: int = 50
+    vol_pct_for_exit: float = 0.70  # top 30% ATR expansion
+
+    # RSI stress thresholds
+    rsi_len: int = 14
+    rsi_exit_long: float = 30.0     # oversold w/ other signs -> risk up
+    rsi_exit_short: float = 70.0    # overbought for shorts
+
+    # Structure break lookback since entry
+    structure_lookback: int = 10
+
+    # Drawdown & time
+    max_intrade_drawdown_R: float = 0.75  # if you give back >=75% of peak R, push exit score higher
+    max_bars_in_trade: int = 200          # hard time cap (bars)
+
+    # Partial take-profits
+    enable_scale_outs: bool = True
+
+    # Safety clamps
+    min_bars_for_indicators: int = 30
+
+
+# ---------- Risk/Exit Engine ----------
+class RiskExitEngine:
+    def __init__(self, cfg: Optional[RiskConfig] = None):
+        self.cfg = cfg or RiskConfig()
+
+    def prepare_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
+        out = df.copy()
+        out["atr"] = atr(out, length=max(14, self.cfg.rsi_len))
+        out["rsi"] = wilder_rsi(out["close"], length=self.cfg.rsi_len)
+        out["ema_fast"] = ema(out["close"], self.cfg.ema_fast)
+        out["ema_slow"] = ema(out["close"], self.cfg.ema_slow)
+        out["chand_long"] = chandelier_exit_high(out, self.cfg.chandelier_mult, self.cfg.chandelier_lookback)
+        out["chand_short"] = chandelier_exit_low(out, self.cfg.chandelier_mult, self.cfg.chandelier_lookback)
+
+        # ATR percentile rank for vol expansion signal
+        atr_roll = out["atr"].rolling(self.cfg.vol_window)
+        out["atr_pct_rank"] = atr_roll.rank(pct=True).fillna(0.0)
+
+        return out
+
+    def _hard_stop_hit(self, pos: Position, last: float) -> bool:
+        if pos.side == "long":
+            return last <= pos.stop_price
+        else:
+            return last >= pos.stop_price
+
+    def _update_trailing_stop(self, pos: Position, row: pd.Series) -> float:
+        # Chandelier trailing stop
+        chand = row["chand_long"] if pos.side == "long" else row["chand_short"]
+        new_stop = pos.stop_price
+
+        if pos.side == "long":
+            if not np.isnan(chand):
+                new_stop = max(pos.stop_price, chand)
+        else:
+            if not np.isnan(chand):
+                new_stop = min(pos.stop_price, chand)
+        return new_stop
+
+    def _structure_break(self, pos: Position, df: pd.DataFrame, now_idx: int) -> bool:
+        # Lookback only since entry (bounded by structure_lookback)
+        look = min(self.cfg.structure_lookback, now_idx)
+        if look < 2:
+            return False
+        window = df.iloc[now_idx - look + 1: now_idx + 1]
+        if pos.side == "long":
+            # break last swing lows (close under rolling min close)
+            return df["close"].iloc[now_idx] < window["close"].rolling(look).min().iloc[-1]
+        else:
+            return df["close"].iloc[now_idx] > window["close"].rolling(look).max().iloc[-1]
+
+    def _momentum_flag(self, pos: Position, row: pd.Series) -> float:
+        # 1 if fast below slow for longs (or above for shorts), plus slope deterioration
+        fast, slow = row["ema_fast"], row["ema_slow"]
+        slope_fast = row["ema_fast"] - row.get("ema_fast_prev", row["ema_fast"])
+        slope_slow = row["ema_slow"] - row.get("ema_slow_prev", row["ema_slow"])
+
+        if pos.side == "long":
+            cross_bad = 1.0 if fast < slow else 0.0
+            slope_bad = 1.0 if slope_fast < 0 and slope_slow < 0 else 0.0
+        else:
+            cross_bad = 1.0 if fast > slow else 0.0
+            slope_bad = 1.0 if slope_fast > 0 and slope_slow > 0 else 0.0
+        return max(cross_bad, slope_bad)
+
+    def _vol_expansion_flag(self, row: pd.Series) -> float:
+        return 1.0 if row["atr_pct_rank"] >= self.cfg.vol_pct_for_exit else 0.0
+
+    def _rsi_stress(self, pos: Position, rsi_value: float) -> float:
+        if pos.side == "long":
+            # More stress the deeper below exit_long you go
+            return float(np.clip((self.cfg.rsi_exit_long - rsi_value) / 20.0, 0.0, 1.0))
+        else:
+            return float(np.clip((rsi_value - self.cfg.rsi_exit_short) / 20.0, 0.0, 1.0))
+
+    def _drawdown_component(self, pos: Position, last_price: float) -> float:
+        r_now = pos.r_multiple(last_price)
+        pos.peak_unrealized = max(pos.peak_unrealized, r_now)
+        giveback = pos.peak_unrealized - r_now
+        # normalize vs configured max giveback
+        return float(np.clip(giveback / max(self.cfg.max_intrade_drawdown_R, 1e-9), 0.0, 1.0))
+
+    def _time_component(self, pos: Position) -> float:
+        return float(np.clip(pos.bars_held / max(self.cfg.max_bars_in_trade, 1), 0.0, 1.0))
+
+    def _composite_exit_score(self,
+                              pos: Position,
+                              df: pd.DataFrame,
+                              now_idx: int) -> Tuple[float, Dict[str, float]]:
+        row = df.iloc[now_idx].copy()
+        # Previous EMA values for slope (safe access)
+        if now_idx > 0:
+            prev = df.iloc[now_idx - 1]
+            row["ema_fast_prev"] = prev["ema_fast"]
+            row["ema_slow_prev"] = prev["ema_slow"]
+
+        features = {}
+
+        features["momentum"] = self._momentum_flag(pos, row)
+        features["vol_expansion"] = self._vol_expansion_flag(row)
+        features["rsi_stress"] = self._rsi_stress(pos, row["rsi"])
+        features["structure_break"] = 1.0 if self._structure_break(pos, df, now_idx) else 0.0
+        features["drawdown"] = self._drawdown_component(pos, row["close"])
+        features["time"] = self._time_component(pos)
+
+        score = (
+            self.cfg.w_momentum * features["momentum"]
+            + self.cfg.w_vol_expansion * features["vol_expansion"]
+            + self.cfg.w_rsi_stress * features["rsi_stress"]
+            + self.cfg.w_structure_break * features["structure_break"]
+            + self.cfg.w_drawdown * features["drawdown"]
+            + self.cfg.w_time * features["time"]
+        )
+        score = float(np.clip(score, 0.0, 1.0))
+        return score, features
+
+    def _initial_stop_from_atr(self, pos: Position, row: pd.Series) -> float:
+        if pos.side == "long":
+            return pos.entry_price - self.cfg.initial_atr_mult * row["atr"]
+        else:
+            return pos.entry_price + self.cfg.initial_atr_mult * row["atr"]
+
+    def _scaleout_targets_prices(self, pos: Position) -> Tuple[np.ndarray, np.ndarray]:
+        """Return target R levels and absolute prices for scale-outs."""
+        r_lvls = np.array(pos.take_profit_levels, dtype=float)
+        base = pos.entry_price
+        d = pos.risk_per_share * pos.direction()
+        prices = base + r_lvls * d
+        return r_lvls, prices
+
+    def _check_scaleouts(self, pos: Position, last_price: float) -> Optional[Dict]:
+        if not self.cfg.enable_scale_outs or pos.realized_scaleouts >= len(pos.take_profit_levels):
+            return None
+
+        r_lvls, prices = self._scaleout_targets_prices(pos)
+        # Find next target not yet taken
+        tgt_idx = pos.realized_scaleouts
+        target_price = prices[tgt_idx]
+        hit = (last_price >= target_price) if pos.side == "long" else (last_price <= target_price)
+        if hit:
+            scale_pct = pos.scale_out_percents[min(tgt_idx, len(pos.scale_out_percents) - 1)]
+            qty_to_sell = round(pos.qty * scale_pct, 8)
+            pos.qty = max(0.0, pos.qty - qty_to_sell)
+            pos.realized_scaleouts += 1
+            # After 1R, tighten stop: adopt chandelier (already handled) AND lock at breakeven+
+            if pos.side == "long":
+                pos.stop_price = max(pos.stop_price, pos.entry_price)
+            else:
+                pos.stop_price = min(pos.stop_price, pos.entry_price)
+            return {
+                "action": "scale_out",
+                "qty": qty_to_sell,
+                "target_R": r_lvls[tgt_idx],
+                "target_price": float(target_price)
+            }
+        return None
+
+    # ---------- Public API ----------
+    def on_new_bar(self, df: pd.DataFrame, pos: Position) -> Dict:
+        """
+        Call this once per new bar with the full (or recent) OHLCV df including the new bar.
+        Returns a dict with any exit or scale-out actions and diagnostics.
+        df columns required: open, high, low, close, volume
+        """
+        if len(df) < self.cfg.min_bars_for_indicators:
+            return {"status": "insufficient_data", "bars": len(df)}
+
+        feats = self.prepare_indicators(df)
+        now_idx = len(feats) - 1
+        last_close = float(feats["close"].iloc[now_idx])
+
+        # First-bar housekeeping after entry: ensure an initial stop exists
+        if pos.bars_held == 0 and (pos.stop_price is None or np.isnan(pos.stop_price)):
+            pos.stop_price = self._initial_stop_from_atr(pos, feats.iloc[now_idx])
+
+        # Update trailing stop (chandelier)
+        pos.stop_price = self._update_trailing_stop(pos, feats.iloc[now_idx])
+
+        # Update bars held
+        pos.bars_held += 1
+
+        # Hard stop check
+        if self._hard_stop_hit(pos, last_close):
+            action = {
+                "action": "exit",
+                "reason": "hard_stop",
+                "price": last_close,
+                "stop_price": float(pos.stop_price),
+            }
+            return {"status": "exit", "decision": action, "diagnostics": {}}
+
+        # Partial take-profits
+        so = self._check_scaleouts(pos, last_close)
+
+        # Composite multi-factor exit score
+        score, feature_map = self._composite_exit_score(pos, feats, now_idx)
+
+        # Time hard cap
+        time_cap = pos.bars_held >= self.cfg.max_bars_in_trade
+
+        if score >= self.cfg.exit_threshold or time_cap:
+            reason = "composite" if not time_cap else "time_cap"
+            action = {
+                "action": "exit",
+                "reason": reason,
+                "price": last_close,
+                "stop_price": float(pos.stop_price),
+                "score": score
+            }
+            return {
+                "status": "exit",
+                "decision": action,
+                "diagnostics": {"features": feature_map, "score": score, "scaleout": so}
+            }
+
+        return {
+            "status": "hold",
+            "decision": {"action": "hold", "stop_price": float(pos.stop_price)},
+            "diagnostics": {"features": feature_map, "score": score, "scaleout": so}
+        }
+
+
+# ---------- Example wiring ----------
+if __name__ == "__main__":
+    # Demo with fake data (replace with your pipeline)
+    idx = pd.date_range("2025-01-01", periods=300, freq="15min")
+    rng = np.random.default_rng(7)
+    price = 100 + np.cumsum(rng.normal(0, 0.2, size=len(idx)))
+    high = price + rng.normal(0.1, 0.05, len(idx)).clip(min=0)
+    low = price - rng.normal(0.1, 0.05, len(idx)).clip(min=0)
+    open_ = pd.Series(price).shift(1).fillna(price[0])
+    vol = rng.integers(1e3, 5e3, len(idx))
+    df = pd.DataFrame({"open": open_.values, "high": high, "low": low, "close": price, "volume": vol}, index=idx)
+
+    engine = RiskExitEngine(RiskConfig())
+    # Simulated long entry
+    entry_idx = 120
+    entry_price = float(df["close"].iloc[entry_idx])
+    init_atr = float(atr(df.iloc[:entry_idx+1]).iloc[-1])
+    pos = Position(
+        symbol="DEMO",
+        side="long",
+        qty=100.0,
+        entry_price=entry_price,
+        entry_time=df.index[entry_idx],
+        risk_per_share=2.0 * init_atr,   # matches initial_atr_mult in default config
+        stop_price=np.nan,               # engine will set on first call after entry
+    )
+
+    # Walk forward after entry
+    for i in range(entry_idx, len(df)):
+        window = df.iloc[:i+1]
+        out = engine.on_new_bar(window, pos)
+        if out["status"] == "exit":
+            print(f"[{window.index[-1]}] EXIT @ {out['decision']['price']:.2f} | reason={out['decision']['reason']} | score={out.get('diagnostics', {}).get('score')}")
+            break
+        elif out["status"] == "hold":
+            diag = out["diagnostics"]
+            so = diag.get("scaleout")
+            if so:
+                print(f"[{window.index[-1]}] SCALE-OUT {so['qty']} @ target {so['target_R']}R ({so['target_price']:.2f})")
