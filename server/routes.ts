@@ -467,6 +467,84 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Stop-Loss Management API endpoints
+  app.get("/api/stop-loss/orders", async (req, res) => {
+    try {
+      const { stopLossManager } = await import("./services/stop-loss-manager.ts");
+      
+      const activeOrders = stopLossManager.getActiveOrders();
+      const triggeredOrders = stopLossManager.getTriggeredOrders(20);
+      
+      res.json([...activeOrders, ...triggeredOrders]);
+    } catch (error) {
+      console.error('Stop-loss orders error:', error);
+      res.status(500).json({ error: "Failed to fetch stop-loss orders" });
+    }
+  });
+
+  app.get("/api/stop-loss/stats", async (req, res) => {
+    try {
+      const { stopLossManager } = await import("./services/stop-loss-manager.ts");
+      res.json(stopLossManager.getStatistics());
+    } catch (error) {
+      console.error('Stop-loss stats error:', error);
+      res.status(500).json({ error: "Failed to fetch stop-loss statistics" });
+    }
+  });
+
+  app.get("/api/stop-loss/settings", async (req, res) => {
+    try {
+      const { stopLossManager } = await import("./services/stop-loss-manager.ts");
+      res.json(stopLossManager.getSettings());
+    } catch (error) {
+      console.error('Stop-loss settings error:', error);
+      res.status(500).json({ error: "Failed to fetch stop-loss settings" });
+    }
+  });
+
+  app.post("/api/stop-loss/settings", async (req, res) => {
+    try {
+      const { stopLossManager } = await import("./services/stop-loss-manager.ts");
+      stopLossManager.updateSettings(req.body);
+      res.json({ success: true, settings: stopLossManager.getSettings() });
+    } catch (error) {
+      console.error('Stop-loss settings update error:', error);
+      res.status(500).json({ error: "Failed to update stop-loss settings" });
+    }
+  });
+
+  app.post("/api/stop-loss/orders/:orderId/cancel", async (req, res) => {
+    try {
+      const { stopLossManager } = await import("./services/stop-loss-manager.ts");
+      const success = stopLossManager.cancelOrder(req.params.orderId);
+      res.json({ success });
+    } catch (error) {
+      console.error('Cancel stop-loss order error:', error);
+      res.status(500).json({ error: "Failed to cancel stop-loss order" });
+    }
+  });
+
+  app.post("/api/stop-loss/create", async (req, res) => {
+    try {
+      const { stopLossManager } = await import("./services/stop-loss-manager.ts");
+      const { symbol, quantity, originalPrice, stopLossPrice, takeProfitPrice, useTrailingStop } = req.body;
+      
+      const order = stopLossManager.createStopLossOrder(
+        symbol,
+        quantity,
+        originalPrice,
+        stopLossPrice,
+        takeProfitPrice,
+        useTrailingStop
+      );
+      
+      res.json({ success: true, order });
+    } catch (error) {
+      console.error('Create stop-loss order error:', error);
+      res.status(500).json({ error: "Failed to create stop-loss order" });
+    }
+  });
+
   // Paper Trading AI endpoints
   app.post("/api/paper-ai/analyze-and-invest", async (req, res) => {
     try {
