@@ -1,0 +1,149 @@
+Pasted-from-future-import-annotations-from-dataclasses-import-dataclass-field-from-typing-import-D-1756920705293_1756920705294.txt
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Dict, Optional, Literal, Tuple
+import numpy as np
+import pandas as pd
+
+
+Side = Literal["long", "short"]
+
+
+# ---------- Core indicator helpers (no external TA libs) ----------
+def wilder_rsi(close: pd.Series, length: int = 14) -> pd.Series:
+    delta = close.diff()
+    up = np.where(delta > 0, delta, 0.0)
+    down = np.where(delta < 0, -delta, 0.0)
+
+    up = pd.Series(up, index=close.index)
+    down = pd.Series(down, index=close.index)
+
+    # Wilder smoothing
+    ema_up = up.ewm(alpha=1/length, adjust=False).mean()
+    ema_down = down.ewm(alpha=1/length, adjust=False).mean()
+    rs = ema_up / (ema_down.replace(0, np.nan))
+    rsi = 100 - (100 / (1 + rs))
+    return rsi.fillna(50.0)
+
+
+def true_range(high: pd.Series, low: pd.Series, close: pd.Series) -> pd.Series:
+    prev_close = close.shift(1)
+    tr = pd.concat([
+        (high - low).abs(),
+        (high - prev_close).abs(),
+        (low - prev_close).abs()
+    ], axis=1).max(axis=1)
+    return tr
+
+
+def atr(df: pd.DataFrame, length: int = 14) -> pd.Series:
+    tr = true_range(df["high"], df["low"], df["close"])
+    # Wilder smoothing
+    return tr.ewm(alpha=1/length, adjust=False).mean()
+
+
+def ema(series: pd.Series, length: int) -> pd.Series:
+    return series.ewm(span=length, adjust=False).mean()
+
+
+def chandelier_exit_high(df: pd.DataFrame, atr_mult: float = 3.0, lookback: int = 22) -> pd.Series:
+    a = atr(df, length=lookback)
+    hh = df["high"].rolling(lookback).max()
+    return (hh - atr_mult * a).rename("chandelier_long")
+
+
+def chandelier_exit_low(df: pd.DataFrame, atr_mult: float = 3.0, lookback: int = 22) -> pd.Series:
+    a = atr(df, length=lookback)
+    ll = df["low"].rolling(lookback).min()
+    return (ll + atr_mult * a).rename("chandelier_short")
+
+
+# ---------- Position state ----------
+@dataclass
+class Position:
+    symbol: str
+    side: Side
+    qty: float
+    entry_price: float
+    entry_time: pd.Timestamp
+    risk_per_share: float  # e.g., initial ATR * k; used for R-multiples
+    stop_price: float      # active stop (will trail)
+    take_profit_levels: Tuple[float, ...] = field(default_factory=lambda: (1.0, 2.0))  # in R
+    scale_out_percents: Tuple[float, ...] = field(default_factory=lambda: (0.5, 0.25))
+    bars_held: int = 0
+    peak_unrealized: float = 0.0  # max in-R since entry
+    realized_scaleouts: int = 0   # how many TP levels hit
+    extra_state: Dict = field(default_factory=dict)
+
+    def direction(self) -> int:
+        return 1 if self.side == "long" else -1
+
+    def r_multiple(self, last_price: float) -> float:
+        if self.risk_per_share <= 0:
+            return 0.0
+        move = (last_price - self.entry_price) * self.direction()
+        return move / self.risk_per_share
+
+
+# ---------- Config ----------
+@dataclass
+class RiskConfig:
+    # Stops
+    initial_atr_mult: float = 2.0
+    chandelier_mult: float = 3.0
+    chandelier_lookback: int = 22
+
+    # Factors (0..1 weights sum can be >1; we clamp final score)
+    w_momentum: float = 0.22
+    w_vol_expansion: float = 0.18
+    w_rsi_stress: float = 0.18
+    w_structure_break: float = 0.22
+    w_drawdown: float = 0.12
+    w_time: float = 0.08
+
+    # Threshold for composite exit
+    exit_threshold: float = 0.70  # >= triggers exit
+
+    # Momentum settings
+    ema_fast: int = 8
+    ema_slow: int = 21
+
+    # Vol expansion: ATR percentile vs lookback window
+    vol_window: int = 50
+    vol_pct_for_exit: float = 0.70  # top 30% ATR expansion
+
+    # RSI stress thresholds
+    rsi_len: int = 14
+    rsi_exit_long: float = 30.0     # oversold w/ other signs -> risk up
+    rsi_exit_short: float = 70.0    # overbought for shorts
+
+    # Structure break lookback since entry
+    structure_lookback: int = 10
+
+    # Drawdown & time
+    max_intrade_drawdown_R: float = 0.75  # if you give back >=75% of peak R, push exit score higher
+    max_bars_in_trade: int = 200          # hard time cap (bars)
+
+    # Partial take-profits
+    enable_scale_outs: bool = True
+
+    # Safety clamps
+    min_bars_for_indicators: int = 30
+
+
+# ---------- Risk/Exit Engine ----------
+class RiskExitEngine:
+    def __init__(self, cfg: Optional[RiskConfig] = None):
+        self.cfg = cfg or RiskConfig()
+
+    def prepare_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
+        out = df.copy()
+        out["atr"] = atr(out, length=max(14, self.cfg.rsi_len))
+        out["rsi"] = wilder_rsi(out["close"], length=self.cfg.rsi_len)
+        out["ema_fast"] = ema(out["close"], self.cfg.ema_fast)
+        out["ema_slow"] = ema(out["close"], self.cfg.ema_slow)
+        out["chand_long"] = chandelier_exit_high(out, self.cfg.chandelier_mult, self.cfg.chandelier_lookback)
+        out["chand_short"] = chandelier_exit_low(out, self.cfg.chandelier_mult, self.cfg.chandelier_lookback)
+
+        # ATR p...
