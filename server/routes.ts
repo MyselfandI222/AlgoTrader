@@ -395,6 +395,78 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/ai/exit-signals", async (req, res) => {
+    try {
+      const { marketDataService } = await import("./services/market-data-service.ts");
+      const marketData = await marketDataService.refreshMarketData();
+      
+      // Generate mock exit signals based on current market conditions
+      const exitSignals = [];
+      
+      for (const stock of marketData.slice(0, 3)) {
+        const changePercent = parseFloat(stock.changePercent);
+        const price = parseFloat(stock.price);
+        
+        // Create exit signals based on market conditions
+        if (changePercent < -5) {
+          exitSignals.push({
+            symbol: stock.symbol,
+            triggerType: 'stop_loss',
+            urgency: changePercent < -8 ? 'high' : 'medium',
+            currentPrice: price,
+            targetPrice: price * 0.92, // 8% stop loss
+            reason: `Stock down ${Math.abs(changePercent).toFixed(1)}%, approaching stop-loss threshold`,
+            confidence: 0.85
+          });
+        }
+        
+        if (changePercent > 10) {
+          exitSignals.push({
+            symbol: stock.symbol,
+            triggerType: 'take_profit',
+            urgency: 'medium',
+            currentPrice: price,
+            targetPrice: price * 1.15, // 15% take profit
+            reason: `Strong gains of ${changePercent.toFixed(1)}%, consider taking profits`,
+            confidence: 0.75
+          });
+        }
+        
+        // Simulate trend reversal detection
+        if (changePercent < -3 && Math.random() > 0.7) {
+          exitSignals.push({
+            symbol: stock.symbol,
+            triggerType: 'trend_reversal',
+            urgency: 'medium',
+            currentPrice: price,
+            targetPrice: price * 0.95,
+            reason: 'Multiple bearish indicators detected, trend may be reversing',
+            confidence: 0.65
+          });
+        }
+      }
+      
+      // Add emergency signal if market is very volatile
+      const avgVolatility = marketData.reduce((sum, stock) => sum + Math.abs(parseFloat(stock.changePercent)), 0) / marketData.length;
+      if (avgVolatility > 6) {
+        exitSignals.push({
+          symbol: 'MARKET',
+          triggerType: 'emergency',
+          urgency: 'emergency',
+          currentPrice: 0,
+          targetPrice: 0,
+          reason: 'High market volatility detected, consider defensive positioning',
+          confidence: 0.9
+        });
+      }
+      
+      res.json(exitSignals);
+    } catch (error) {
+      console.error('Exit signals error:', error);
+      res.status(500).json({ error: "Failed to fetch exit signals" });
+    }
+  });
+
   // Paper Trading AI endpoints
   app.post("/api/paper-ai/analyze-and-invest", async (req, res) => {
     try {

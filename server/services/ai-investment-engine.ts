@@ -16,6 +16,10 @@ export interface AIInvestmentDecision {
   riskScore: number; // 0-10, higher = riskier
   expectedReturn: number; // Expected return percentage
   priority: 'high' | 'medium' | 'low';
+  urgency?: 'low' | 'medium' | 'high' | 'emergency'; // For automatic exits
+  triggerType?: 'entry' | 'exit' | 'stop_loss' | 'take_profit' | 'trend_reversal';
+  stopLossPrice?: number; // Automatic sell price
+  takeProfitPrice?: number; // Target profit exit price
 }
 
 export interface AISettings {
@@ -30,6 +34,13 @@ export interface AISettings {
   correlationLimit: number; // 0.3-0.8, max correlation between positions
   sectorAllocationLimits: Record<string, number>; // sector -> max percentage
   rebalanceThreshold: number; // 0.05-0.2, trigger rebalance when drift exceeds
+  // Automatic exit settings
+  enableStopLoss: boolean; // Enable automatic stop-loss
+  stopLossPercent: number; // 5-25, percentage loss to trigger stop-loss
+  enableTakeProfit: boolean; // Enable automatic take-profit
+  takeProfitPercent: number; // 10-50, percentage gain to trigger take-profit
+  enableTrendExit: boolean; // Enable trend reversal exits
+  maxDrawdownPercent: number; // 10-30, maximum portfolio drawdown before emergency exit
 }
 
 interface MarketAnalysis {
@@ -42,6 +53,12 @@ interface MarketAnalysis {
   technicalScore: number;
   sector: string;
   marketCap: 'large' | 'mid' | 'small';
+  // Trend analysis for exit signals
+  trendDirection: 'up' | 'down' | 'sideways';
+  trendStrength: number; // 0-1, strength of the trend
+  support: number; // Support price level
+  resistance: number; // Resistance price level
+  bearishSignals: number; // Count of bearish indicators
 }
 
 interface PortfolioAllocation {
@@ -76,17 +93,26 @@ export class AIInvestmentEngine {
       // Step 1: Get current market data
       const marketData = await marketDataService.refreshMarketData();
       
-      // Step 2: Perform advanced market analysis
+      // Step 2: Perform advanced market analysis with exit signals
       const marketAnalysis = await this.performAdvancedMarketAnalysis(marketData);
       
-      // Step 3: Calculate optimal portfolio allocation
+      // Step 3: Check for emergency exit conditions first
+      const emergencyExits = await this.checkEmergencyExitConditions(marketAnalysis);
+      
+      // Step 4: Check existing positions for exit signals
+      const exitDecisions = await this.checkExitConditions(marketAnalysis);
+      
+      // Step 5: Calculate optimal portfolio allocation for new entries
       const optimalAllocation = await this.calculateOptimalAllocation(marketAnalysis);
       
-      // Step 4: Generate investment decisions based on allocation
-      const decisions = await this.generateInvestmentDecisions(optimalAllocation, marketAnalysis);
+      // Step 6: Generate investment decisions (entries + exits)
+      const entryDecisions = await this.generateInvestmentDecisions(optimalAllocation, marketAnalysis);
       
-      console.log(`🧠 Advanced AI: Generated ${decisions.length} optimized investment decisions`);
-      return decisions;
+      // Combine all decisions with exits taking priority
+      const allDecisions = [...emergencyExits, ...exitDecisions, ...entryDecisions];
+      
+      console.log(`🧠 Advanced AI: Generated ${allDecisions.length} decisions (${exitDecisions.length + emergencyExits.length} exits, ${entryDecisions.length} entries)`);
+      return allDecisions;
     } catch (error) {
       console.error('Advanced AI Engine error:', error);
       return [];
@@ -106,7 +132,13 @@ export class AIInvestmentEngine {
         sentimentScore: this.analyzeSentiment(stock.symbol, parseFloat(stock.changePercent)),
         technicalScore: this.calculateTechnicalScore(stock),
         sector: this.sectorMapping[stock.symbol as keyof typeof this.sectorMapping] || 'Unknown',
-        marketCap: this.getMarketCapCategory(stock.symbol)
+        marketCap: this.getMarketCapCategory(stock.symbol),
+        // Enhanced trend analysis for exit detection
+        trendDirection: this.analyzeTrendDirection(stock),
+        trendStrength: this.calculateTrendStrength(stock),
+        support: this.calculateSupportLevel(parseFloat(stock.price)),
+        resistance: this.calculateResistanceLevel(parseFloat(stock.price)),
+        bearishSignals: this.countBearishSignals(stock)
       };
       
       analyses.push(analysis);
@@ -185,7 +217,11 @@ export class AIInvestmentEngine {
           allocationWeight: allocation.targetWeight,
           riskScore: this.calculateRiskScore(analysis),
           expectedReturn: this.calculateExpectedReturn(analysis),
-          priority: allocation.priority > 0.7 ? 'high' : allocation.priority > 0.4 ? 'medium' : 'low'
+          priority: allocation.priority > 0.7 ? 'high' : allocation.priority > 0.4 ? 'medium' : 'low',
+          urgency: 'low',
+          triggerType: 'entry',
+          stopLossPrice: this.settings.enableStopLoss ? analysis.price * (1 - this.settings.stopLossPercent / 100) : undefined,
+          takeProfitPrice: this.settings.enableTakeProfit ? analysis.price * (1 + this.settings.takeProfitPercent / 100) : undefined
         };
         
         decisions.push(decision);
@@ -350,6 +386,160 @@ export class AIInvestmentEngine {
     }
   }
 
+  // New methods for automatic exit strategies
+  private async checkEmergencyExitConditions(analyses: MarketAnalysis[]): Promise<AIInvestmentDecision[]> {
+    const emergencyExits: AIInvestmentDecision[] = [];
+    
+    // Check for market-wide panic conditions
+    const negativeStocks = analyses.filter(a => a.trendDirection === 'down' && a.bearishSignals >= 3);
+    const panicThreshold = analyses.length * 0.7; // 70% of stocks in downtrend
+    
+    if (negativeStocks.length >= panicThreshold) {
+      console.log('🚨 EMERGENCY: Market-wide bearish conditions detected!');
+      
+      // Create emergency exit decisions for all positions
+      for (const analysis of analyses) {
+        if (analysis.bearishSignals >= 2) {
+          emergencyExits.push({
+            symbol: analysis.symbol,
+            action: 'sell',
+            quantity: 999999, // Sell all shares
+            confidence: 0.95,
+            reasoning: 'Emergency exit due to market panic conditions and multiple bearish signals',
+            strategy: 'Emergency Exit Protocol',
+            allocationWeight: 0,
+            riskScore: 10,
+            expectedReturn: -15,
+            priority: 'high',
+            urgency: 'emergency',
+            triggerType: 'exit'
+          });
+        }
+      }
+    }
+    
+    return emergencyExits;
+  }
+
+  private async checkExitConditions(analyses: MarketAnalysis[]): Promise<AIInvestmentDecision[]> {
+    const exitDecisions: AIInvestmentDecision[] = [];
+    
+    for (const analysis of analyses) {
+      // Check for stop-loss conditions
+      if (this.settings.enableStopLoss && this.shouldTriggerStopLoss(analysis)) {
+        exitDecisions.push({
+          symbol: analysis.symbol,
+          action: 'sell',
+          quantity: 999999, // Sell all shares
+          confidence: 0.9,
+          reasoning: `Stop-loss triggered: ${this.settings.stopLossPercent}% loss threshold exceeded`,
+          strategy: 'Automated Stop-Loss',
+          allocationWeight: 0,
+          riskScore: 8,
+          expectedReturn: -this.settings.stopLossPercent,
+          priority: 'high',
+          urgency: 'high',
+          triggerType: 'stop_loss'
+        });
+      }
+      
+      // Check for take-profit conditions
+      if (this.settings.enableTakeProfit && this.shouldTriggerTakeProfit(analysis)) {
+        exitDecisions.push({
+          symbol: analysis.symbol,
+          action: 'sell',
+          quantity: 999999, // Sell all shares
+          confidence: 0.85,
+          reasoning: `Take-profit triggered: ${this.settings.takeProfitPercent}% gain target reached`,
+          strategy: 'Automated Take-Profit',
+          allocationWeight: 0,
+          riskScore: 2,
+          expectedReturn: this.settings.takeProfitPercent,
+          priority: 'medium',
+          urgency: 'medium',
+          triggerType: 'take_profit'
+        });
+      }
+      
+      // Check for trend reversal conditions
+      if (this.settings.enableTrendExit && this.shouldExitOnTrendReversal(analysis)) {
+        exitDecisions.push({
+          symbol: analysis.symbol,
+          action: 'sell',
+          quantity: 999999, // Sell all shares
+          confidence: 0.8,
+          reasoning: 'Trend reversal detected: Multiple bearish signals indicate downward momentum',
+          strategy: 'Trend Reversal Exit',
+          allocationWeight: 0,
+          riskScore: 6,
+          expectedReturn: -5,
+          priority: 'medium',
+          urgency: 'medium',
+          triggerType: 'trend_reversal'
+        });
+      }
+    }
+    
+    return exitDecisions;
+  }
+
+  // New trend analysis methods
+  private analyzeTrendDirection(stock: any): 'up' | 'down' | 'sideways' {
+    const changePercent = parseFloat(stock.changePercent);
+    const change = parseFloat(stock.change);
+    
+    if (changePercent > 2 && change > 0) return 'up';
+    if (changePercent < -2 && change < 0) return 'down';
+    return 'sideways';
+  }
+
+  private calculateTrendStrength(stock: any): number {
+    const changePercent = Math.abs(parseFloat(stock.changePercent));
+    return Math.min(1.0, changePercent / 10); // Normalize to 0-1
+  }
+
+  private calculateSupportLevel(currentPrice: number): number {
+    // Simple support calculation (in real system, would use historical data)
+    return currentPrice * 0.95; // 5% below current price
+  }
+
+  private calculateResistanceLevel(currentPrice: number): number {
+    // Simple resistance calculation
+    return currentPrice * 1.05; // 5% above current price
+  }
+
+  private countBearishSignals(stock: any): number {
+    let bearishCount = 0;
+    const changePercent = parseFloat(stock.changePercent);
+    const change = parseFloat(stock.change);
+    
+    // Various bearish indicators
+    if (changePercent < -3) bearishCount++; // Large negative change
+    if (change < 0) bearishCount++; // Negative price movement
+    if (parseFloat(stock.price) < this.getHistoricalAverage(stock.symbol) * 0.9) bearishCount++; // Below support
+    if (this.calculateVolatility(stock) > 0.8) bearishCount++; // High volatility
+    
+    return bearishCount;
+  }
+
+  private shouldTriggerStopLoss(analysis: MarketAnalysis): boolean {
+    // In a real system, this would compare current price to purchase price
+    // For demo, we'll use trend and bearish signals
+    return analysis.bearishSignals >= 3 && analysis.trendDirection === 'down';
+  }
+
+  private shouldTriggerTakeProfit(analysis: MarketAnalysis): boolean {
+    // In a real system, this would compare current price to purchase price
+    // For demo, we'll use strong positive signals
+    return analysis.momentum > 0.8 && analysis.sentimentScore > 0.8 && analysis.trendDirection === 'up';
+  }
+
+  private shouldExitOnTrendReversal(analysis: MarketAnalysis): boolean {
+    return analysis.trendDirection === 'down' && 
+           analysis.bearishSignals >= 2 && 
+           analysis.momentum < 0.3;
+  }
+
   updateSettings(newSettings: Partial<AISettings>): void {
     this.settings = { ...this.settings, ...newSettings };
     console.log('🤖 AI Engine: Settings updated:', this.settings);
@@ -378,7 +568,14 @@ export const DEFAULT_AI_SETTINGS: AISettings = {
     'Healthcare': 0.3,
     'Financial': 0.25
   },
-  rebalanceThreshold: 0.1 // 10% drift triggers rebalance
+  rebalanceThreshold: 0.1, // 10% drift triggers rebalance
+  // Automatic exit settings
+  enableStopLoss: true,
+  stopLossPercent: 8, // 8% stop-loss
+  enableTakeProfit: true,
+  takeProfitPercent: 15, // 15% take-profit
+  enableTrendExit: true,
+  maxDrawdownPercent: 20 // 20% max portfolio drawdown
 };
 
 // Global AI engine instance

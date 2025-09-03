@@ -9,17 +9,19 @@ import { AlgorithmEngine } from "@/components/strategies/algorithm-engine";
 import { BacktestingLab } from "@/components/strategies/backtesting-lab";
 import { APISettings } from "@/components/settings/api-settings";
 import { AllocationVisualization } from "@/components/ai/allocation-visualization";
+import { ExitSignalsMonitor } from "@/components/ai/exit-signals-monitor";
 import { Button } from "@/components/ui/button";
-import { Brain, Shield, BarChart3, Activity, Target, Key } from "lucide-react";
+import { Brain, Shield, BarChart3, Activity, Target, Key, AlertTriangle } from "lucide-react";
 
 export default function Strategies() {
-  const [activeTab, setActiveTab] = useState<"overview" | "strategies" | "allocation" | "risk" | "engine" | "backtest" | "config" | "api">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "strategies" | "allocation" | "exits" | "risk" | "engine" | "backtest" | "config" | "api">("overview");
   const [selectedStrategy, setSelectedStrategy] = useState<{ id: string; name: string } | null>(null);
 
   const tabs = [
     { id: "overview" as const, label: "Overview", icon: BarChart3 },
     { id: "strategies" as const, label: "AI Strategies", icon: Brain },
     { id: "allocation" as const, label: "Advanced Allocation", icon: Target },
+    { id: "exits" as const, label: "Exit Signals", icon: AlertTriangle },
     { id: "engine" as const, label: "Algorithm Engine", icon: Activity },
     { id: "backtest" as const, label: "Backtesting Lab", icon: Target },
     { id: "risk" as const, label: "Risk Management", icon: Shield },
@@ -66,6 +68,7 @@ export default function Strategies() {
             {activeTab === "overview" && <StrategyOverview />}
             {activeTab === "strategies" && <StrategyList />}
             {activeTab === "allocation" && <AllocationVisualization />}
+            {activeTab === "exits" && <ExitSignalsMonitor />}
             {activeTab === "engine" && <AlgorithmEngine />}
             {activeTab === "backtest" && <BacktestingLab />}
             {activeTab === "risk" && <RiskManagement />}
