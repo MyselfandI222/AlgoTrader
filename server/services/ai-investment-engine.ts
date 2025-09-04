@@ -100,6 +100,19 @@ export class AIInvestmentEngine {
     this.settings = settings;
   }
 
+  // Add methods to expose data needed by allocation endpoint
+  getSettings(): AISettings {
+    return this.settings;
+  }
+
+  getSectorForSymbol(symbol: string): string {
+    return this.sectorMapping[symbol as keyof typeof this.sectorMapping] || 'Unknown';
+  }
+
+  updateSettings(newSettings: Partial<AISettings>): void {
+    this.settings = { ...this.settings, ...newSettings };
+  }
+
   async analyzeMarketAndMakeDecisions(): Promise<AIInvestmentDecision[]> {
     console.log('🧠 Advanced AI Engine: Starting comprehensive market analysis...');
     
@@ -607,14 +620,7 @@ export class AIInvestmentEngine {
            analysis.momentum < 0.3;
   }
 
-  updateSettings(newSettings: Partial<AISettings>): void {
-    this.settings = { ...this.settings, ...newSettings };
-    console.log('🤖 AI Engine: Settings updated:', this.settings);
-  }
-
-  getSettings(): AISettings {
-    return { ...this.settings };
-  }
+  // Duplicate methods removed - now using the ones defined earlier
 }
 
 // Default AI settings with advanced allocation parameters

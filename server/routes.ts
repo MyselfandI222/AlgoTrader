@@ -287,17 +287,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Get AI decisions
       const decisions = await aiInvestmentEngine.analyzeMarketAndMakeDecisions();
       
-      // Execute the trades (only buy/sell, not hold)
+      // Execute the trades (only buy/sell, not hold) with detailed logging
       const marketData = await marketDataService.refreshMarketData();
+      let executedCount = 0;
+      
       for (const decision of decisions) {
         if (decision.action !== 'hold') {
           const marketStock = marketData.find(stock => stock.symbol === decision.symbol);
           if (marketStock) {
             const price = parseFloat(marketStock.price);
+            console.log(`💰 EXECUTING: ${decision.action.toUpperCase()} ${decision.quantity} ${decision.symbol} @ $${price} - Strategy: ${decision.strategy}`);
+            console.log(`📝 Reasoning: ${decision.reasoning}`);
+            
             portfolioTracker.executeTrade(decision.symbol, decision.action, decision.quantity, price);
+            executedCount++;
           }
         }
       }
+      
+      console.log(`✅ Executed ${executedCount} trades using world-class trading strategies`);
       
       // Update portfolio snapshot
       await portfolioTracker.updatePortfolioSnapshot(marketData);
@@ -305,7 +313,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({
         success: true,
         decisions,
-        executedTrades: decisions.length
+        executedTrades: executedCount,
+        totalDecisions: decisions.length,
+        strategies: decisions.map(d => `${d.symbol}: ${d.strategy}`)
       });
     } catch (error) {
       console.error('AI investment error:', error);
@@ -361,34 +371,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { aiInvestmentEngine } = await import("./services/ai-investment-engine.ts");
       const { portfolioTracker } = await import("./services/portfolio-tracker.ts");
-      
-      // Get current market data for analysis
       const { marketDataService } = await import("./services/market-data-service.ts");
+      
+      console.log('📊 Getting REAL AI allocation decisions (not mock data)');
+      
+      // Get actual AI decisions using world-class trader strategies
+      const decisions = await aiInvestmentEngine.analyzeMarketAndMakeDecisions();
       const marketData = await marketDataService.refreshMarketData();
       
-      // Simulate getting allocation data (in a real system, this would be stored)
-      const mockAllocationData = marketData.slice(0, 4).map((stock, index) => {
-        const weights = [0.3, 0.25, 0.25, 0.2];
-        const expectedReturns = [12.5, 8.7, 15.2, 6.8];
-        const riskScores = [6.2, 4.1, 8.5, 3.2];
-        const sectors = ['Technology', 'Technology', 'Technology', 'Consumer'];
-        const strategies = ['Momentum Growth', 'AI Value Discovery', 'Volatility Harvesting', 'Defensive AI Shield'];
-        const priorities = ['high', 'medium', 'high', 'low'];
-        
-        return {
-          symbol: stock.symbol,
-          targetWeight: weights[index],
-          currentWeight: weights[index], // Simplified
-          value: weights[index] * 100000, // Based on $100k portfolio
-          expectedReturn: expectedReturns[index],
-          riskScore: riskScores[index],
-          sector: sectors[index],
-          priority: priorities[index],
-          strategy: strategies[index]
-        };
-      });
+      // Convert AI decisions to allocation format with REAL strategy reasoning
+      const realAllocationData = decisions
+        .filter(decision => decision.action === 'buy') // Show buy decisions as allocations
+        .map(decision => {
+          const marketStock = marketData.find(stock => stock.symbol === decision.symbol);
+          const currentPrice = marketStock ? parseFloat(marketStock.price) : 0;
+          
+          return {
+            symbol: decision.symbol,
+            targetWeight: decision.allocationWeight,
+            currentWeight: 0, // Will be updated as trades execute
+            value: decision.allocationWeight * aiInvestmentEngine.getSettings().investmentAmount,
+            expectedReturn: decision.expectedReturn,
+            riskScore: decision.riskScore,
+            sector: aiInvestmentEngine.getSectorForSymbol(decision.symbol),
+            priority: decision.priority,
+            strategy: decision.strategy, // Real world-class trader strategy!
+            reasoning: decision.reasoning, // Real AI reasoning!
+            confidence: decision.confidence,
+            quantity: decision.quantity,
+            currentPrice: currentPrice,
+            stopLossPrice: decision.stopLossPrice,
+            takeProfitPrice: decision.takeProfitPrice
+          };
+        });
       
-      res.json(mockAllocationData);
+      console.log(`📈 Returning ${realAllocationData.length} REAL AI allocations with world-class strategies`);
+      res.json(realAllocationData);
     } catch (error) {
       console.error('AI allocation error:', error);
       res.status(500).json({ error: "Failed to fetch AI allocation data" });
