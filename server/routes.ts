@@ -11,6 +11,67 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Setup authentication
   setupAuth(app);
   
+  // Local authentication routes
+  app.post("/api/auth/signup", async (req, res) => {
+    try {
+      const { username, email, password } = req.body;
+      
+      // Check if user exists
+      const existingUser = await storage.getUserByEmail(email);
+      if (existingUser) {
+        return res.status(400).json({ error: "User already exists with this email" });
+      }
+      
+      // Create user
+      const user = await storage.createUser({
+        username,
+        email,
+        password, // In production, hash this password
+      });
+      
+      // Log them in by setting session
+      req.login(user, (err) => {
+        if (err) {
+          return res.status(500).json({ error: "Login failed after signup" });
+        }
+        const { password: _, ...userWithoutPassword } = user;
+        res.json({ user: userWithoutPassword, message: "Account created successfully" });
+      });
+    } catch (error) {
+      console.error('Signup error:', error);
+      res.status(500).json({ error: "Failed to create account" });
+    }
+  });
+
+  app.post("/api/auth/login", async (req, res) => {
+    try {
+      const { email, password } = req.body;
+      
+      // Find user
+      const user = await storage.getUserByEmail(email);
+      if (!user) {
+        return res.status(401).json({ error: "Invalid email or password" });
+      }
+      
+      // Check password (in production, compare hashed passwords)
+      if (user.password !== password) {
+        return res.status(401).json({ error: "Invalid email or password" });
+      }
+      
+      // Log them in
+      req.login(user, (err) => {
+        if (err) {
+          return res.status(500).json({ error: "Login failed" });
+        }
+        const { password: _, ...userWithoutPassword } = user;
+        res.json({ user: userWithoutPassword, message: "Login successful" });
+      });
+    } catch (error) {
+      console.error('Login error:', error);
+      res.status(500).json({ error: "Login failed" });
+    }
+  });
+  
   // User routes
   app.post("/api/users", async (req, res) => {
     try {
