@@ -241,6 +241,10 @@ export default function PaperTrading() {
     try {
       await triggerPaperAI.mutateAsync();
       setLastAiAnalysis(new Date());
+      // Automatically enable AI Mode to keep running continuously
+      if (!aiMode) {
+        setAiMode(true);
+      }
     } catch (error) {
       console.error('Manual Paper AI analysis failed:', error);
     }
