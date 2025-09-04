@@ -20,7 +20,10 @@ export interface IStorage {
   // Users
   getUser(id: string): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
+  getUserByEmail(email: string): Promise<User | undefined>;
+  getUserByProvider(provider: string, providerId: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
+  createOAuthUser(userData: { email: string; name?: string; avatar?: string; provider: string; providerId: string }): Promise<User>;
   updateUser(id: string, user: Partial<User>): Promise<User | undefined>;
   updateUserBalance(userId: string, balance: string): Promise<User | undefined>;
   changePassword(userId: string, newPassword: string): Promise<boolean>;
@@ -107,12 +110,24 @@ export class MemStorage implements IStorage {
     return Array.from(this.users.values()).find(user => user.username === username);
   }
 
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    return Array.from(this.users.values()).find(user => user.email === email);
+  }
+
+  async getUserByProvider(provider: string, providerId: string): Promise<User | undefined> {
+    return Array.from(this.users.values()).find(user => user.provider === provider && user.providerId === providerId);
+  }
+
   async createUser(insertUser: InsertUser): Promise<User> {
     const id = randomUUID();
     const user: User = { 
       ...insertUser, 
       id,
-      balance: insertUser.balance || "0.00",
+      username: insertUser.username || null,
+      password: insertUser.password || null,
+      provider: insertUser.provider || null,
+      providerId: insertUser.providerId || null,
+      balance: insertUser.balance || "100000.00",
       name: insertUser.name || null,
       bio: insertUser.bio || null,
       avatar: insertUser.avatar || null,
@@ -120,13 +135,46 @@ export class MemStorage implements IStorage {
       pushNotifications: insertUser.pushNotifications !== undefined ? insertUser.pushNotifications : true,
       twoFactorEnabled: insertUser.twoFactorEnabled !== undefined ? insertUser.twoFactorEnabled : false,
       createdAt: new Date(),
+      updatedAt: new Date(),
     };
     this.users.set(id, user);
 
     // Create initial portfolio for user
     await this.createPortfolio({
       userId: id,
-      totalValue: insertUser.balance || "0.00",
+      totalValue: user.balance,
+      dailyPnl: "0.00",
+      dailyPnlPercent: "0.00",
+    });
+
+    return user;
+  }
+
+  async createOAuthUser(userData: { email: string; name?: string; avatar?: string; provider: string; providerId: string }): Promise<User> {
+    const id = randomUUID();
+    const user: User = {
+      id,
+      username: null,
+      email: userData.email,
+      password: null,
+      provider: userData.provider,
+      providerId: userData.providerId,
+      name: userData.name || null,
+      bio: null,
+      avatar: userData.avatar || null,
+      emailNotifications: true,
+      pushNotifications: true,
+      twoFactorEnabled: false,
+      balance: "100000.00",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    this.users.set(id, user);
+
+    // Create initial portfolio for user
+    await this.createPortfolio({
+      userId: id,
+      totalValue: user.balance,
       dailyPnl: "0.00",
       dailyPnlPercent: "0.00",
     });

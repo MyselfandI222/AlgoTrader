@@ -4,9 +4,12 @@ import { storage } from "./storage";
 import { insertUserSchema, insertTradeSchema, insertTransactionSchema, updateProfileSchema, updateNotificationsSchema, changePasswordSchema } from "@shared/schema";
 import { createStrategyRoutes } from "./routes/strategy-routes.js";
 import { marketDataService } from "./services/market-data-service.js";
+import { setupAuth, requireAuth } from "./auth";
 import { z } from "zod";
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Setup authentication
+  setupAuth(app);
   
   // User routes
   app.post("/api/users", async (req, res) => {

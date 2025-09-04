@@ -1,21 +1,35 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, decimal, integer, timestamp, boolean, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, decimal, integer, timestamp, boolean, jsonb, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
+// Session storage table
+export const sessions = pgTable(
+  "sessions",
+  {
+    sid: varchar("sid").primaryKey(),
+    sess: jsonb("sess").notNull(),
+    expire: timestamp("expire").notNull(),
+  },
+  (table) => [index("IDX_session_expire").on(table.expire)],
+);
+
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  username: text("username").notNull().unique(),
+  username: text("username"),
   email: text("email").notNull().unique(),
-  password: text("password").notNull(),
+  password: text("password"), // Optional for OAuth users
+  provider: text("provider"), // 'google', 'yahoo', or null for local
+  providerId: text("provider_id"), // OAuth provider's user ID
   name: text("name"),
   bio: text("bio"),
   avatar: text("avatar"),
   emailNotifications: boolean("email_notifications").notNull().default(true),
   pushNotifications: boolean("push_notifications").notNull().default(true),
   twoFactorEnabled: boolean("two_factor_enabled").notNull().default(false),
-  balance: decimal("balance", { precision: 15, scale: 2 }).notNull().default("0.00"),
+  balance: decimal("balance", { precision: 15, scale: 2 }).notNull().default("100000.00"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
 export const portfolios = pgTable("portfolios", {
@@ -90,6 +104,16 @@ export const transactions = pgTable("transactions", {
 export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
   createdAt: true,
+  updatedAt: true,
+});
+
+// OAuth User creation schema
+export const oauthUserSchema = z.object({
+  email: z.string().email(),
+  name: z.string().optional(),
+  avatar: z.string().optional(),
+  provider: z.enum(["google", "yahoo"]),
+  providerId: z.string(),
 });
 
 export const updateProfileSchema = createInsertSchema(users).pick({
