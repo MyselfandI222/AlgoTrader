@@ -72,14 +72,28 @@ interface PortfolioAllocation {
 
 export class AIInvestmentEngine {
   private settings: AISettings;
-  private marketSymbols = ['AAPL', 'TSLA', 'NVDA', 'MSFT', 'AMZN', 'GOOGL'];
+  private marketSymbols = ['AAPL', 'TSLA', 'NVDA', 'MSFT', 'AMZN', 'GOOGL', 'META', 'NFLX', 'AMD', 'INTC', 'CRM', 'UBER', 'DIS', 'V', 'JPM', 'JNJ', 'PG', 'KO', 'PFE', 'WMT'];
   private sectorMapping = {
     'AAPL': 'Technology',
     'TSLA': 'Automotive',
     'NVDA': 'Technology',
     'MSFT': 'Technology',
     'AMZN': 'Consumer',
-    'GOOGL': 'Technology'
+    'GOOGL': 'Technology',
+    'META': 'Technology',
+    'NFLX': 'Entertainment',
+    'AMD': 'Technology',
+    'INTC': 'Technology',
+    'CRM': 'Technology',
+    'UBER': 'Transportation',
+    'DIS': 'Entertainment',
+    'V': 'Financial',
+    'JPM': 'Financial',
+    'JNJ': 'Healthcare',
+    'PG': 'Consumer',
+    'KO': 'Consumer',
+    'PFE': 'Healthcare',
+    'WMT': 'Consumer'
   };
   
   constructor(settings: AISettings) {
@@ -346,19 +360,36 @@ export class AIInvestmentEngine {
   }
 
   private getMarketCapCategory(symbol: string): 'large' | 'mid' | 'small' {
-    const largeCaps = ['AAPL', 'MSFT', 'GOOGL', 'AMZN'];
-    return largeCaps.includes(symbol) ? 'large' : 'mid';
+    const largeCaps = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'TSLA', 'META', 'V', 'JPM', 'JNJ', 'WMT', 'PG'];
+    const midCaps = ['AMD', 'CRM', 'NFLX', 'DIS', 'UBER', 'INTC'];
+    if (largeCaps.includes(symbol)) return 'large';
+    if (midCaps.includes(symbol)) return 'mid';
+    return 'small';
   }
 
   private getHistoricalAverage(symbol: string): number {
     // Updated historical averages to reflect realistic 2024/2025 price levels
     const basePrices: Record<string, number> = {
-      'AAPL': 200,   // More realistic for Apple's range
+      'AAPL': 200,   // Apple's range
       'TSLA': 200,   // Tesla's trading range
-      'NVDA': 120,   // Much more realistic for NVIDIA (was 800!)
-      'MSFT': 380,   // Microsoft's realistic range  
+      'NVDA': 120,   // NVIDIA realistic range
+      'MSFT': 380,   // Microsoft's range  
       'AMZN': 160,   // Amazon's range
-      'GOOGL': 160   // Google's range
+      'GOOGL': 160,  // Google's range
+      'META': 450,   // Meta/Facebook range
+      'NFLX': 400,   // Netflix range
+      'AMD': 140,    // AMD range
+      'INTC': 45,    // Intel range
+      'CRM': 280,    // Salesforce range
+      'UBER': 60,    // Uber range
+      'DIS': 110,    // Disney range
+      'V': 280,      // Visa range
+      'JPM': 180,    // JPMorgan range
+      'JNJ': 160,    // Johnson & Johnson range
+      'PG': 160,     // Procter & Gamble range
+      'KO': 62,      // Coca-Cola range
+      'PFE': 45,     // Pfizer range
+      'WMT': 170     // Walmart range
     };
     return basePrices[symbol] || 100;
   }

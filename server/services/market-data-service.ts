@@ -533,7 +533,7 @@ export class MarketDataService {
   }
 
   async refreshMarketData(): Promise<StockQuote[]> {
-    const symbols = ['AAPL', 'TSLA', 'NVDA', 'MSFT', 'AMZN', 'GOOGL'];
+    const symbols = ['AAPL', 'TSLA', 'NVDA', 'MSFT', 'AMZN', 'GOOGL', 'META', 'NFLX', 'AMD', 'INTC', 'CRM', 'UBER', 'DIS', 'V', 'JPM', 'JNJ', 'PG', 'KO', 'PFE', 'WMT'];
     return this.getMultipleQuotes(symbols);
   }
 
