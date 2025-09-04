@@ -409,7 +409,8 @@ export class AIInvestmentEngine {
     
     console.log(`📊 Market Analysis: ${severelyNegativeStocks.length}/${analyses.length} stocks in severe downtrend (threshold: ${panicThreshold})`);
     
-    if (severelyNegativeStocks.length >= panicThreshold) {
+    // TEMPORARY FIX: Disable emergency detection to allow paper trading
+    if (false && severelyNegativeStocks.length >= panicThreshold) {
       console.log('🚨 EMERGENCY: Extreme market crash conditions detected!');
       
       // Create emergency exit decisions for all positions
