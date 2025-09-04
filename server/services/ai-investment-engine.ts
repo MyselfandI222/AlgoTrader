@@ -351,13 +351,14 @@ export class AIInvestmentEngine {
   }
 
   private getHistoricalAverage(symbol: string): number {
+    // Updated historical averages to reflect realistic 2024/2025 price levels
     const basePrices: Record<string, number> = {
-      'AAPL': 180,
-      'TSLA': 240,
-      'NVDA': 800,
-      'MSFT': 400,
-      'AMZN': 170,
-      'GOOGL': 165
+      'AAPL': 200,   // More realistic for Apple's range
+      'TSLA': 200,   // Tesla's trading range
+      'NVDA': 120,   // Much more realistic for NVIDIA (was 800!)
+      'MSFT': 380,   // Microsoft's realistic range  
+      'AMZN': 160,   // Amazon's range
+      'GOOGL': 160   // Google's range
     };
     return basePrices[symbol] || 100;
   }
@@ -396,9 +397,17 @@ export class AIInvestmentEngine {
   private async checkEmergencyExitConditions(analyses: MarketAnalysis[]): Promise<AIInvestmentDecision[]> {
     const emergencyExits: AIInvestmentDecision[] = [];
     
+    // Debug: Log all stock analysis details
+    console.log('🔍 DEBUG: Stock Analysis Details:');
+    analyses.forEach(a => {
+      console.log(`  ${a.symbol}: trend=${a.trendDirection}, bearish=${a.bearishSignals}, price=${a.price}`);
+    });
+    
     // Check for market-wide panic conditions (made less sensitive)
     const severelyNegativeStocks = analyses.filter(a => a.trendDirection === 'down' && a.bearishSignals >= 4);
     const panicThreshold = analyses.length * 0.85; // 85% of stocks in severe downtrend
+    
+    console.log(`📊 Market Analysis: ${severelyNegativeStocks.length}/${analyses.length} stocks in severe downtrend (threshold: ${panicThreshold})`);
     
     if (severelyNegativeStocks.length >= panicThreshold) {
       console.log('🚨 EMERGENCY: Extreme market crash conditions detected!');
@@ -422,9 +431,6 @@ export class AIInvestmentEngine {
           });
         }
       }
-    } else {
-      // Log normal market conditions
-      console.log(`📊 Market conditions: ${severelyNegativeStocks.length}/${analyses.length} stocks in severe downtrend (threshold: ${panicThreshold})`);
     }
     
     return emergencyExits;
