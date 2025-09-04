@@ -57,24 +57,13 @@ export default function PaperTrading() {
   const [paperBalance, setPaperBalance] = useState(INITIAL_PAPER_BALANCE);
   const [paperPositions, setPaperPositions] = useState<PaperPosition[]>([]);
   const [paperTrades, setPaperTrades] = useState<PaperTrade[]>([]);
-  const [aiMode, setAiMode] = useState(false);
+  const [aiMode, setAiMode] = useState(true); // AI-only mode: always enabled
   const [lastAiAnalysis, setLastAiAnalysis] = useState<Date | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showComparison, setShowComparison] = useState(false);
   
-  // Trading form state
-  const [selectedSymbol, setSelectedSymbol] = useState("AAPL");
-  const [orderSide, setOrderSide] = useState<'buy' | 'sell'>('buy');
-  const [orderType, setOrderType] = useState<'market' | 'limit' | 'stop'>('market');
-  const [quantity, setQuantity] = useState("10");
-  const [limitPrice, setLimitPrice] = useState("");
-  
   const { data: marketData } = useMarketData();
-  const { data: currentQuote } = useStockQuote(selectedSymbol);
   const triggerPaperAI = useTriggerPaperAI();
-  
-  const currentPrice = parseFloat(currentQuote?.price || "0");
-  const orderValue = parseInt(quantity || "0") * currentPrice;
   
   // Calculate total P&L
   const totalPnL = paperPositions.reduce((sum, pos) => sum + pos.pnl, 0);
@@ -241,10 +230,7 @@ export default function PaperTrading() {
     try {
       await triggerPaperAI.mutateAsync();
       setLastAiAnalysis(new Date());
-      // Automatically enable AI Mode to keep running continuously
-      if (!aiMode) {
-        setAiMode(true);
-      }
+      // AI mode is always enabled in AI-only paper trading
     } catch (error) {
       console.error('Manual Paper AI analysis failed:', error);
     }
@@ -288,22 +274,10 @@ export default function PaperTrading() {
                 <Settings className="w-4 h-4 mr-2" />
                 AI Settings
               </Button>
-              <Button
-                onClick={() => setAiMode(!aiMode)}
-                className={`${aiMode ? 'bg-green-600 hover:bg-green-700' : 'bg-gray-600 hover:bg-gray-700'}`}
-              >
-                {aiMode ? (
-                  <div className="flex items-center space-x-2">
-                    <Bot className="w-4 h-4" />
-                    <span>AI Mode ON</span>
-                  </div>
-                ) : (
-                  <div className="flex items-center space-x-2">
-                    <Brain className="w-4 h-4" />
-                    <span>AI Mode OFF</span>
-                  </div>
-                )}
-              </Button>
+              <div className="flex items-center space-x-2 bg-green-600 px-4 py-2 rounded-lg">
+                <Bot className="w-4 h-4" />
+                <span>AI-Only Mode</span>
+              </div>
               <Button 
                 onClick={resetAccount}
                 variant="outline" 
@@ -371,8 +345,8 @@ export default function PaperTrading() {
             </Card>
           </div>
 
-          {/* AI Mode Controls */}
-          {aiMode && (
+          {/* AI Mode Controls - Always visible in AI-only mode */}
+          {(
             <Card className="bg-blue-900/20 border-blue-400/30">
               <CardContent className="p-4">
                 <div className="flex items-center justify-between">
