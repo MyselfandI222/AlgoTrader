@@ -211,7 +211,7 @@ export class AIInvestmentEngine {
       const maxAllowedForSector = Math.max(0, maxSectorWeight - currentSectorWeight);
       targetWeight = Math.min(targetWeight, maxAllowedForSector);
       
-      if (targetWeight > 0.03) { // Minimum 3% allocation (was 5% - too restrictive)
+      if (targetWeight > 0.02) { // Minimum 2% allocation - allow smaller positions like top traders
         allocations.push({
           symbol: asset.symbol,
           targetWeight,
@@ -365,11 +365,17 @@ export class AIInvestmentEngine {
   }
 
   private calculateExpectedReturn(analysis: MarketAnalysis): number {
-    const baseReturn = analysis.compositeScore * 15; // 0-15% base
-    const momentumBonus = analysis.momentum * 5; // Up to 5% momentum bonus
-    const volatilityPenalty = analysis.volatility * 3; // Up to 3% volatility penalty
+    // Enhanced return calculation based on master trader strategies
+    const buffettLongTermReturn = analysis.valueScore * 12; // Value investing baseline
+    const sorosMomentumReturn = analysis.momentum * analysis.trendStrength * 8; // Momentum boost
+    const renTechVolatilityReturn = analysis.volatility > 0.3 ? analysis.volatility * 6 : 0; // Volatility harvesting
     
-    return Math.max(0, baseReturn + momentumBonus - volatilityPenalty);
+    // Risk adjustment à la Ray Dalio
+    const riskAdjustment = analysis.volatility > 0.5 ? -3 : 0;
+    
+    const totalExpectedReturn = buffettLongTermReturn + sorosMomentumReturn + renTechVolatilityReturn + riskAdjustment;
+    
+    return Math.max(2, Math.min(25, totalExpectedReturn)); // 2-25% expected return range
   }
 
   private getMarketCapCategory(symbol: string): 'large' | 'mid' | 'small' {
