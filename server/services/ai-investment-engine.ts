@@ -102,11 +102,17 @@ export class AIInvestmentEngine {
       // Step 4: Check existing positions for exit signals
       const exitDecisions = await this.checkExitConditions(marketAnalysis);
       
-      // Step 5: Calculate optimal portfolio allocation for new entries
-      const optimalAllocation = await this.calculateOptimalAllocation(marketAnalysis);
-      
-      // Step 6: Generate investment decisions (entries + exits)
-      const entryDecisions = await this.generateInvestmentDecisions(optimalAllocation, marketAnalysis);
+      // Step 5: Only skip new entries if we have actual emergency exits
+      let entryDecisions: AIInvestmentDecision[] = [];
+      if (emergencyExits.length === 0) {
+        // Step 6: Calculate optimal portfolio allocation for new entries
+        const optimalAllocation = await this.calculateOptimalAllocation(marketAnalysis);
+        
+        // Step 7: Generate investment decisions (entries)
+        entryDecisions = await this.generateInvestmentDecisions(optimalAllocation, marketAnalysis);
+      } else {
+        console.log('🚫 Skipping new entries due to emergency market conditions');
+      }
       
       // Combine all decisions with exits taking priority
       const allDecisions = [...emergencyExits, ...exitDecisions, ...entryDecisions];
@@ -178,7 +184,7 @@ export class AIInvestmentEngine {
       const maxAllowedForSector = Math.max(0, maxSectorWeight - currentSectorWeight);
       targetWeight = Math.min(targetWeight, maxAllowedForSector);
       
-      if (targetWeight > 0.05) { // Minimum 5% allocation
+      if (targetWeight > 0.03) { // Minimum 3% allocation (was 5% - too restrictive)
         allocations.push({
           symbol: asset.symbol,
           targetWeight,
@@ -390,22 +396,22 @@ export class AIInvestmentEngine {
   private async checkEmergencyExitConditions(analyses: MarketAnalysis[]): Promise<AIInvestmentDecision[]> {
     const emergencyExits: AIInvestmentDecision[] = [];
     
-    // Check for market-wide panic conditions
-    const negativeStocks = analyses.filter(a => a.trendDirection === 'down' && a.bearishSignals >= 3);
-    const panicThreshold = analyses.length * 0.7; // 70% of stocks in downtrend
+    // Check for market-wide panic conditions (made less sensitive)
+    const severelyNegativeStocks = analyses.filter(a => a.trendDirection === 'down' && a.bearishSignals >= 4);
+    const panicThreshold = analyses.length * 0.85; // 85% of stocks in severe downtrend
     
-    if (negativeStocks.length >= panicThreshold) {
-      console.log('🚨 EMERGENCY: Market-wide bearish conditions detected!');
+    if (severelyNegativeStocks.length >= panicThreshold) {
+      console.log('🚨 EMERGENCY: Extreme market crash conditions detected!');
       
       // Create emergency exit decisions for all positions
       for (const analysis of analyses) {
-        if (analysis.bearishSignals >= 2) {
+        if (analysis.bearishSignals >= 3) {
           emergencyExits.push({
             symbol: analysis.symbol,
             action: 'sell',
             quantity: 999999, // Sell all shares
             confidence: 0.95,
-            reasoning: 'Emergency exit due to market panic conditions and multiple bearish signals',
+            reasoning: 'Emergency exit due to market crash conditions and multiple bearish signals',
             strategy: 'Emergency Exit Protocol',
             allocationWeight: 0,
             riskScore: 10,
@@ -416,6 +422,9 @@ export class AIInvestmentEngine {
           });
         }
       }
+    } else {
+      // Log normal market conditions
+      console.log(`📊 Market conditions: ${severelyNegativeStocks.length}/${analyses.length} stocks in severe downtrend (threshold: ${panicThreshold})`);
     }
     
     return emergencyExits;
@@ -488,8 +497,8 @@ export class AIInvestmentEngine {
     const changePercent = parseFloat(stock.changePercent);
     const change = parseFloat(stock.change);
     
-    if (changePercent > 2 && change > 0) return 'up';
-    if (changePercent < -2 && change < 0) return 'down';
+    if (changePercent > 1.5 && change > 0) return 'up';
+    if (changePercent < -3 && change < 0) return 'down'; // Made stricter for down trend
     return 'sideways';
   }
 
@@ -513,11 +522,12 @@ export class AIInvestmentEngine {
     const changePercent = parseFloat(stock.changePercent);
     const change = parseFloat(stock.change);
     
-    // Various bearish indicators
-    if (changePercent < -3) bearishCount++; // Large negative change
-    if (change < 0) bearishCount++; // Negative price movement
-    if (parseFloat(stock.price) < this.getHistoricalAverage(stock.symbol) * 0.9) bearishCount++; // Below support
-    if (this.calculateVolatility(stock) > 0.8) bearishCount++; // High volatility
+    // More balanced bearish indicators (less aggressive)
+    if (changePercent < -5) bearishCount++; // Significant negative change (was -3)
+    if (changePercent < -8) bearishCount++; // Large negative change (additional signal)
+    if (changePercent < -2 && change < 0) bearishCount++; // Moderate decline (was just any negative change)
+    if (parseFloat(stock.price) < this.getHistoricalAverage(stock.symbol) * 0.85) bearishCount++; // Well below support (was 0.9)
+    if (this.calculateVolatility(stock) > 0.9) bearishCount++; // Very high volatility (was 0.8)
     
     return bearishCount;
   }
