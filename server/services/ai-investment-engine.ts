@@ -105,7 +105,9 @@ export class AIInvestmentEngine {
     
     try {
       // Step 1: Get current market data
+      console.log('📡 Fetching real-time market data from APIs...');
       const marketData = await marketDataService.refreshMarketData();
+      console.log(`📊 Market data fetched: ${marketData.length} stocks`);
       
       // Step 2: Perform advanced market analysis with exit signals
       const marketAnalysis = await this.performAdvancedMarketAnalysis(marketData);
@@ -142,7 +144,17 @@ export class AIInvestmentEngine {
   private async performAdvancedMarketAnalysis(marketData: any[]): Promise<MarketAnalysis[]> {
     const analyses: MarketAnalysis[] = [];
     
+    console.log(`🔍 MARKET DATA DEBUG: Received ${marketData.length} stocks for analysis`);
+    if (marketData.length > 0) {
+      console.log(`📊 Sample stock data:`, JSON.stringify(marketData[0], null, 2));
+    }
+    
     for (const stock of marketData) {
+      if (!stock || !stock.symbol || !stock.price) {
+        console.log(`⚠️ Skipping invalid stock data:`, stock);
+        continue;
+      }
+      
       const analysis: MarketAnalysis = {
         symbol: stock.symbol,
         price: parseFloat(stock.price),
@@ -164,6 +176,7 @@ export class AIInvestmentEngine {
       analyses.push(analysis);
     }
     
+    console.log(`✅ ANALYSIS COMPLETE: Generated ${analyses.length} stock analyses`);
     return analyses;
   }
 
