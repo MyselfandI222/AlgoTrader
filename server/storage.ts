@@ -74,12 +74,12 @@ export class MemStorage implements IStorage {
   private transactions: Map<string, Transaction> = new Map();
 
   constructor() {
-    this.initializeData();
+    this.initializeData().catch(console.error);
   }
 
-  private initializeData() {
+  private async initializeData() {
     // Create demo user
-    this.createUser({
+    await this.createUser({
       username: "demo_trader",
       email: "demo@tradeai.com",
       password: "demo123"
