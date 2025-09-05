@@ -98,16 +98,6 @@ export default function SignUp() {
     signUpMutation.mutate(formData);
   };
 
-  const handleDemoAccount = () => {
-    // Create a demo account with mock data
-    const demoData = {
-      username: `demo_trader_${Date.now()}`,
-      email: `demo${Date.now()}@tradeai.com`,
-      password: "demo123",
-      confirmPassword: "demo123"
-    };
-    signUpMutation.mutate(demoData);
-  };
 
   if (isLoading) {
     return (
@@ -240,23 +230,6 @@ export default function SignUp() {
             </Button>
           </form>
 
-          <div className="relative">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-gray-600"></div>
-            </div>
-            <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-gray-800 px-2 text-gray-400">Or</span>
-            </div>
-          </div>
-
-          <Button
-            onClick={handleDemoAccount}
-            className="w-full bg-green-600 hover:bg-green-700 text-white font-medium py-3"
-            disabled={signUpMutation.isPending}
-            data-testid="button-demo-account"
-          >
-            {signUpMutation.isPending ? "Creating Demo..." : "Create Demo Account"}
-          </Button>
 
           <div className="mt-6 pt-4 border-t border-gray-700 text-center">
             <p className="text-sm text-gray-400">

@@ -78,6 +78,13 @@ export class MemStorage implements IStorage {
   }
 
   private initializeData() {
+    // Create demo user
+    this.createUser({
+      username: "demo_trader",
+      email: "demo@tradeai.com",
+      password: "demo123"
+    });
+    
     // Initialize market data for popular stocks
     const stocks = [
       { symbol: 'AAPL', price: '173.42', change: '2.34', changePercent: '1.37' },

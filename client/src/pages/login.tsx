@@ -80,13 +80,6 @@ export default function Login() {
     loginMutation.mutate(formData);
   };
 
-  const handleDemoLogin = () => {
-    // Use demo credentials
-    loginMutation.mutate({
-      email: "demo@tradeai.com",
-      password: "demo123"
-    });
-  };
 
   const getErrorMessage = (error: string | null) => {
     switch (error) {
@@ -191,23 +184,6 @@ export default function Login() {
             </Button>
           </form>
 
-          <div className="relative">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-gray-600"></div>
-            </div>
-            <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-gray-800 px-2 text-gray-400">Or</span>
-            </div>
-          </div>
-
-          <Button
-            onClick={handleDemoLogin}
-            className="w-full bg-green-600 hover:bg-green-700 text-white font-medium py-3"
-            disabled={loginMutation.isPending}
-            data-testid="button-demo-login"
-          >
-            {loginMutation.isPending ? "Signing In..." : "Try Demo Account"}
-          </Button>
 
           <div className="mt-6 pt-4 border-t border-gray-700 text-center">
             <p className="text-sm text-gray-400">
