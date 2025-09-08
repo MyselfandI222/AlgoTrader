@@ -376,20 +376,22 @@ export class AIInvestmentEngine {
   }
 
   private calculateCompositeScore(analysis: MarketAnalysis): number {
-    const weights = {
-      momentum: 0.25,
-      value: 0.20,
-      sentiment: 0.20,
-      technical: 0.25,
-      volatility: -0.10 // Lower volatility is better
-    };
+    // Use the new combined score as the primary ranking metric
+    // This combines fundamental analysis (60%) and technical analysis (40%)
+    const combinedWeight = 0.7; // Weight the combined F+T score at 70%
+    
+    // Traditional market factors at reduced weight
+    const traditionalWeight = 0.3;
+    const traditionalScore = (
+      analysis.momentum * 0.4 +
+      analysis.valueScore * 0.2 +
+      analysis.sentimentScore * 0.3 +
+      (1 - analysis.volatility) * 0.1
+    );
     
     return (
-      analysis.momentum * weights.momentum +
-      analysis.valueScore * weights.value +
-      analysis.sentimentScore * weights.sentiment +
-      analysis.technicalScore * weights.technical +
-      (1 - analysis.volatility) * Math.abs(weights.volatility)
+      analysis.combinedScore * combinedWeight +
+      traditionalScore * traditionalWeight
     );
   }
 
@@ -680,6 +682,223 @@ export class AIInvestmentEngine {
     // In a real system, this would compare current price to purchase price
     // For demo, we'll use strong positive signals
     return analysis.momentum > 0.8 && analysis.sentimentScore > 0.8 && analysis.trendDirection === 'up';
+  }
+
+  // Enhanced fundamental analysis using real-world financial metrics
+  private async getFundamentalMetrics(symbol: string): Promise<FundamentalMetrics> {
+    // In a real implementation, this would fetch from financial data APIs
+    // For demo purposes, generating realistic fundamental data
+    const baseMetrics = this.generateRealisticFundamentals(symbol);
+    
+    return {
+      epsGrowth: baseMetrics.epsGrowth,
+      roe: baseMetrics.roe,
+      salesGrowth: baseMetrics.salesGrowth,
+      peRatio: baseMetrics.peRatio,
+      pbRatio: baseMetrics.pbRatio,
+      debtToEquity: baseMetrics.debtToEquity,
+      currentRatio: baseMetrics.currentRatio,
+      grossMargin: baseMetrics.grossMargin,
+      operatingMargin: baseMetrics.operatingMargin,
+      fundamentalScore: this.calculateFundamentalScore(baseMetrics)
+    };
+  }
+  
+  private generateRealisticFundamentals(symbol: string): any {
+    // Generate realistic fundamental metrics based on stock characteristics
+    const stockCharacteristics = {
+      'AAPL': { growth: 'high', profitability: 'excellent', debt: 'low' },
+      'TSLA': { growth: 'very_high', profitability: 'good', debt: 'moderate' },
+      'MSFT': { growth: 'high', profitability: 'excellent', debt: 'low' },
+      'NVDA': { growth: 'very_high', profitability: 'excellent', debt: 'low' },
+      'GOOGL': { growth: 'high', profitability: 'excellent', debt: 'very_low' },
+    };
+    
+    const characteristics = stockCharacteristics[symbol] || { growth: 'moderate', profitability: 'good', debt: 'moderate' };
+    
+    const growthMultiplier = {
+      'very_high': { eps: [25, 45], sales: [20, 35] },
+      'high': { eps: [15, 25], sales: [10, 20] },
+      'moderate': { eps: [5, 15], sales: [3, 10] },
+      'low': { eps: [-5, 5], sales: [-2, 3] }
+    };
+    
+    const profitabilityMultiplier = {
+      'excellent': { roe: [20, 35], grossMargin: [35, 60], operatingMargin: [20, 40] },
+      'good': { roe: [12, 20], grossMargin: [25, 35], operatingMargin: [10, 20] },
+      'moderate': { roe: [8, 12], grossMargin: [15, 25], operatingMargin: [5, 10] },
+      'poor': { roe: [2, 8], grossMargin: [5, 15], operatingMargin: [0, 5] }
+    };
+    
+    const debtLevels = {
+      'very_low': [0.05, 0.15],
+      'low': [0.15, 0.3],
+      'moderate': [0.3, 0.6],
+      'high': [0.6, 1.0]
+    };
+    
+    const growth = growthMultiplier[characteristics.growth];
+    const profitability = profitabilityMultiplier[characteristics.profitability];
+    const debt = debtLevels[characteristics.debt];
+    
+    return {
+      epsGrowth: this.randomBetween(growth.eps[0], growth.eps[1]),
+      roe: this.randomBetween(profitability.roe[0], profitability.roe[1]),
+      salesGrowth: this.randomBetween(growth.sales[0], growth.sales[1]),
+      peRatio: this.randomBetween(15, 35),
+      pbRatio: this.randomBetween(1.5, 5),
+      debtToEquity: this.randomBetween(debt[0], debt[1]),
+      currentRatio: this.randomBetween(1.0, 3.0),
+      grossMargin: this.randomBetween(profitability.grossMargin[0], profitability.grossMargin[1]),
+      operatingMargin: this.randomBetween(profitability.operatingMargin[0], profitability.operatingMargin[1])
+    };
+  }
+  
+  private calculateFundamentalScore(metrics: any): number {
+    let score = 0;
+    
+    // EPS Growth (0-3 points)
+    if (metrics.epsGrowth >= 25) score += 3;
+    else if (metrics.epsGrowth >= 15) score += 2;
+    else if (metrics.epsGrowth >= 5) score += 1;
+    
+    // ROE (0-2 points)
+    if (metrics.roe >= 20) score += 2;
+    else if (metrics.roe >= 15) score += 1;
+    
+    // Sales Growth (0-2 points)
+    if (metrics.salesGrowth >= 15) score += 2;
+    else if (metrics.salesGrowth >= 10) score += 1;
+    
+    // P/E Ratio (0-1 point, lower is better)
+    if (metrics.peRatio <= 20) score += 1;
+    
+    // Debt-to-Equity (0-1 point, lower is better)
+    if (metrics.debtToEquity <= 0.3) score += 1;
+    
+    // Operating Margin (0-1 point)
+    if (metrics.operatingMargin >= 15) score += 1;
+    
+    return Math.min(score, 10); // Cap at 10
+  }
+  
+  // Enhanced technical analysis for breakout detection
+  private async getTechnicalAnalysis(symbol: string, marketData: any): Promise<TechnicalAnalysis> {
+    const price = parseFloat(marketData.price);
+    const volume = marketData.volume || 1000000;
+    const change = parseFloat(marketData.changePercent);
+    
+    // Simulate technical indicators
+    const rsi = this.calculateRSI(price, change);
+    const volumeAverage = volume * 0.8; // Simulate 50-day average
+    const volumeSurge = volume > (volumeAverage * this.technicalCriteria.minVolumeIncrease);
+    
+    // Simulate resistance/support levels
+    const resistanceLevel = price * (1 + Math.random() * 0.05 + 0.02); // 2-7% above current price
+    const supportLevel = price * (1 - Math.random() * 0.05 - 0.02); // 2-7% below current price
+    
+    // Breakout signal: price breaking above recent resistance with volume
+    const breakoutSignal = change > this.technicalCriteria.minBreakoutStrength && volumeSurge;
+    
+    // Moving average signal
+    const movingAverageSignal = change > 3 ? 'bullish' : change < -3 ? 'bearish' : 'neutral';
+    
+    // MACD signal (simplified)
+    const macd = change > 1 ? 'bullish' : change < -1 ? 'bearish' : 'neutral';
+    
+    // Trend strength (0-10)
+    const trendStrength = Math.min(Math.abs(change) * 2, 10);
+    
+    // Technical score calculation
+    const technicalScore = this.calculateTechnicalScore2({
+      breakoutSignal,
+      volumeSurge,
+      movingAverageSignal,
+      rsi,
+      macd,
+      trendStrength
+    });
+    
+    return {
+      breakoutSignal,
+      volumeSurge,
+      movingAverageSignal,
+      rsi,
+      macd,
+      supportLevel,
+      resistanceLevel,
+      trendStrength,
+      technicalScore
+    };
+  }
+  
+  private calculateRSI(price: number, change: number): number {
+    // Simplified RSI calculation
+    const baseRsi = 50 + (change * 10); // Scale change to RSI range
+    return Math.max(0, Math.min(100, baseRsi));
+  }
+  
+  private calculateTechnicalScore2(analysis: any): number {
+    let score = 0;
+    
+    // Breakout signal (0-3 points)
+    if (analysis.breakoutSignal) score += 3;
+    
+    // Volume surge (0-2 points)
+    if (analysis.volumeSurge) score += 2;
+    
+    // Moving average signal (0-2 points)
+    if (analysis.movingAverageSignal === 'bullish') score += 2;
+    else if (analysis.movingAverageSignal === 'neutral') score += 1;
+    
+    // RSI (0-1 point, not overbought)
+    if (analysis.rsi >= 30 && analysis.rsi <= 70) score += 1;
+    
+    // MACD (0-1 point)
+    if (analysis.macd === 'bullish') score += 1;
+    
+    // Trend strength (0-1 point)
+    if (analysis.trendStrength >= this.technicalCriteria.trendStrengthThreshold) score += 1;
+    
+    return Math.min(score, 10); // Cap at 10
+  }
+  
+  // Combined fundamental and technical screening
+  private passesScreeningCriteria(fundamentals: FundamentalMetrics, technicals: TechnicalAnalysis): boolean {
+    // Fundamental criteria
+    const fundamentalPass = 
+      fundamentals.epsGrowth >= this.fundamentalCriteria.minEpsGrowth &&
+      fundamentals.roe >= this.fundamentalCriteria.minRoe &&
+      fundamentals.salesGrowth >= this.fundamentalCriteria.minSalesGrowth &&
+      fundamentals.peRatio <= this.fundamentalCriteria.maxPeRatio &&
+      fundamentals.debtToEquity <= this.fundamentalCriteria.maxDebtToEquity &&
+      fundamentals.currentRatio >= this.fundamentalCriteria.minCurrentRatio;
+    
+    // Technical criteria
+    const technicalPass = 
+      technicals.breakoutSignal &&
+      technicals.volumeSurge &&
+      technicals.rsi <= this.technicalCriteria.maxRsi &&
+      technicals.trendStrength >= this.technicalCriteria.trendStrengthThreshold;
+    
+    // Both fundamental and technical criteria must pass
+    return fundamentalPass && technicalPass;
+  }
+  
+  // Combined scoring system
+  private calculateCombinedScore(fundamentals: FundamentalMetrics, technicals: TechnicalAnalysis): number {
+    // Weight fundamental analysis 60% and technical analysis 40%
+    const fundamentalWeight = 0.6;
+    const technicalWeight = 0.4;
+    
+    const combinedScore = (fundamentals.fundamentalScore * fundamentalWeight) + 
+                         (technicals.technicalScore * technicalWeight);
+    
+    return Math.min(combinedScore, 10);
+  }
+  
+  private randomBetween(min: number, max: number): number {
+    return Math.random() * (max - min) + min;
   }
 
   private shouldExitOnTrendReversal(analysis: MarketAnalysis): boolean {
