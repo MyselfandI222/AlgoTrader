@@ -61,17 +61,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ error: "Invalid email or password" });
       }
       
-      console.log('Password correct, logging in...');
-      // Log them in
-      req.login(user, (err) => {
-        if (err) {
-          console.error('req.login error:', err);
-          return res.status(500).json({ error: "Login failed" });
-        }
-        console.log('Login successful');
+      console.log('Password correct, manually setting session...');
+      // Manually set session instead of using req.login
+      if (req.session) {
+        (req.session as any).userId = user.id;
+        (req.session as any).user = user;
+        console.log('Session set manually');
         const { password: _, ...userWithoutPassword } = user;
         res.json({ user: userWithoutPassword, message: "Login successful" });
-      });
+      } else {
+        console.error('No session available');
+        res.status(500).json({ error: "Session not available" });
+      }
     } catch (error) {
       console.error('Login error:', error);
       res.status(500).json({ error: "Login failed" });
