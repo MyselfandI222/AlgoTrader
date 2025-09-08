@@ -10,15 +10,9 @@ import type { Express, RequestHandler } from 'express';
 const pgStore = connectPg(session);
 
 export function setupSession(app: Express) {
-  const sessionStore = new pgStore({
-    conString: process.env.DATABASE_URL,
-    createTableIfMissing: true,
-    ttl: 7 * 24 * 60 * 60, // 7 days
-  });
-
+  // Use memory store for now since we're having issues with PostgreSQL session store
   app.use(session({
     secret: process.env.SESSION_SECRET || 'dev-secret-key-change-in-production',
-    store: sessionStore,
     resave: false,
     saveUninitialized: false,
     cookie: {

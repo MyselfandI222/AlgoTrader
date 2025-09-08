@@ -1,0 +1,122 @@
+import { sma, maxN, minN, pct, returnN, percentileRank } from "./indicators.js";
+import { getDailyHistory, getName } from "./data.js";
+import type { ScanResult } from "./types.js";
+
+export type TemplateParams = {
+  rsWindows?: { short?: number; mid?: number; long?: number }; // days
+  baseWindow?: number;    // recent-range “base” window (e.g., 35 trading days ~ 7 weeks)
+  breakoutBufferPct?: number; // how far above baseHigh qualifies as breakout
+  volumeSurgeMin?: number;    // x times above 50d average volume
+  proximityToHighPct?: number; // within N% of 52w high
+  aboveLowPct?: number;        // at least N% above 52w low
+};
+
+export const defaultParams: TemplateParams = {
+  rsWindows: { short: 21, mid: 63, long: 252 },
+  baseWindow: 35,
+  breakoutBufferPct: 0.5,
+  volumeSurgeMin: 1.5,
+  proximityToHighPct: 25,
+  aboveLowPct: 30
+};
+
+export const analyzeSymbol = async (symbol: string, params = defaultParams): Promise<ScanResult | null> => {
+  const hist = await getDailyHistory(symbol, 400);
+  if (hist.length < 260) return null;
+
+  const closes = hist.map(h => h.close);
+  const vols = hist.map(h => h.volume ?? 0);
+
+  const price = closes[closes.length - 1];
+
+  const sma50 = sma(closes, 50);
+  const sma150 = sma(closes, 150);
+  const sma200 = sma(closes, 200);
+  const sma200Prev = sma(closes.slice(0, -20), 200); // trend up vs 20d ago
+
+  const high52w = maxN(closes, 252);
+  const low52w = minN(closes, 252);
+
+  const baseHigh = maxN(closes, params.baseWindow!);
+  const avgVol50 = sma(vols, 50);
+  const todayVol = vols[vols.length - 1];
+
+  // RS Rank (composite of multi-horizon returns, compared to this symbol only — true rank is computed later across all symbols)
+  const r21 = returnN(closes, params.rsWindows!.short!);
+  const r63 = returnN(closes, params.rsWindows!.mid!);
+  const r252 = returnN(closes, params.rsWindows!.long!);
+  const rsComposite = (r21 + r63 + r252) / 3;
+
+  // Minervini “Trend Template” style conditions
+  const reasons: string[] = [];
+
+  if (!(price > sma150 && price > sma200)) reasons.push("Price not > 150/200 SMA");
+  if (!(sma150 > sma200)) reasons.push("SMA150 not > SMA200");
+  if (!(sma200 > sma200Prev)) reasons.push("SMA200 not trending up");
+  if (!(sma50 > sma150 && sma50 > sma200)) reasons.push("SMA50 not > SMA150 & SMA200");
+  if (!(price > sma50)) reasons.push("Price not > SMA50");
+  if (!(pct(price, low52w) >= params.aboveLowPct!)) reasons.push(`Price not ≥ ${params.aboveLowPct}% above 52w low`);
+  if (!(pct(high52w, price) <= params.proximityToHighPct!)) reasons.push(`Price not within ${params.proximityToHighPct}% of 52w high`);
+
+  // Breakout check: today > recent base high + small buffer AND volume surge
+  const breakoutNeeded = baseHigh * (1 + params.breakoutBufferPct! / 100);
+  const breakout = price > breakoutNeeded && (todayVol && avgVol50 ? (todayVol / avgVol50) >= params.volumeSurgeMin! : true);
+
+  const name = await getName(symbol);
+
+  const result: ScanResult = {
+    symbol,
+    name,
+    price,
+    breakout,
+    reasons,
+    distanceFrom52WHigh: pct(high52w, price),
+    distanceFrom50SMA: pct(price, sma50),
+    movingAverages: { sma50, sma150, sma200 },
+    ranges: { high52w, low52w, baseHigh },
+    volume: {
+      today: todayVol,
+      avg50: avgVol50,
+      surge: todayVol && avgVol50 ? todayVol / avgVol50 : undefined
+    }
+  };
+
+  // If all core template conditions pass, remove reasons (or keep informational)
+  const allCorePass =
+    price > sma150 && price > sma200 &&
+    sma150 > sma200 &&
+    sma200 > sma200Prev &&
+    sma50 > sma150 && sma50 > sma200 &&
+    price > sma50 &&
+    pct(price, low52w) >= params.aboveLowPct! &&
+    pct(high52w, price) <= params.proximityToHighPct!;
+
+  if (allCorePass) result.reasons = ["Trend Template PASS"];
+
+  // Attach rsComposite for ranking later (we’ll map to percentile across the batch in scanSymbols)
+  (result as any)._rsComposite = rsComposite;
+
+  return result;
+};
+
+export const scanSymbols = async (symbols: string[], params = defaultParams) => {
+  const raw = await Promise.all(symbols.map(s => analyzeSymbol(s, params)));
+  const results = raw.filter(Boolean) as ScanResult[];
+
+  // Percentile RS Rank across universe using _rsComposite
+  const composites = (raw.filter(Boolean) as any[]).map(r => r._rsComposite as number);
+  for (const r of results as any[]) {
+    r.rsRankPct = Math.round(percentileRank(composites, r._rsComposite));
+    delete r._rsComposite;
+  }
+
+  // Sort: breakout first, then RS rank desc, then distance to 52w high asc
+  results.sort((a, b) => {
+    if (a.breakout !== b.breakout) return a.breakout ? -1 : 1;
+    const rs = (b.rsRankPct ?? 0) - (a.rsRankPct ?? 0);
+    if (rs !== 0) return rs;
+    return a.distanceFrom52WHigh - b.distanceFrom52WHigh;
+  });
+
+  return results;
+};
