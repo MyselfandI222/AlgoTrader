@@ -161,8 +161,12 @@ export function setupAuth(app: Express) {
     });
   });
 
-  app.get('/api/auth/user', (req, res) => {
-    if (req.isAuthenticated() && req.user) {
+  app.get('/api/auth/user', async (req, res) => {
+    // Check manual session first, then passport session
+    const sessionUser = (req.session as any)?.user;
+    if (sessionUser) {
+      res.json(sessionUser);
+    } else if (req.isAuthenticated() && req.user) {
       res.json(req.user);
     } else {
       res.status(401).json({ error: 'Not authenticated' });
