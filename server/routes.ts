@@ -62,13 +62,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       console.log('Password correct, manually setting session...');
+      console.log('Session ID before:', req.sessionID);
+      console.log('Session data before:', req.session);
+      
       // Manually set session instead of using req.login
       if (req.session) {
         (req.session as any).userId = user.id;
         (req.session as any).user = user;
-        console.log('Session set manually');
-        const { password: _, ...userWithoutPassword } = user;
-        res.json({ user: userWithoutPassword, message: "Login successful" });
+        
+        // Force session save
+        req.session.save((err) => {
+          if (err) {
+            console.error('Session save error:', err);
+            return res.status(500).json({ error: "Session save failed" });
+          }
+          console.log('Session saved successfully');
+          console.log('Session ID after:', req.sessionID);
+          console.log('Session data after:', req.session);
+          
+          const { password: _, ...userWithoutPassword } = user;
+          res.json({ user: userWithoutPassword, message: "Login successful" });
+        });
       } else {
         console.error('No session available');
         res.status(500).json({ error: "Session not available" });

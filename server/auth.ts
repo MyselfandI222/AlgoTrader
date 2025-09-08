@@ -163,12 +163,19 @@ export function setupAuth(app: Express) {
 
   app.get('/api/auth/user', async (req, res) => {
     // Check manual session first, then passport session
+    console.log('Auth check - Session ID:', req.sessionID);
+    console.log('Auth check - Session data:', req.session);
+    console.log('Auth check - isAuthenticated:', req.isAuthenticated());
+    
     const sessionUser = (req.session as any)?.user;
     if (sessionUser) {
+      console.log('Found session user:', sessionUser.email);
       res.json(sessionUser);
     } else if (req.isAuthenticated() && req.user) {
+      console.log('Found passport user');
       res.json(req.user);
     } else {
+      console.log('No authenticated user found');
       res.status(401).json({ error: 'Not authenticated' });
     }
   });
