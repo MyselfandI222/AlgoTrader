@@ -43,6 +43,31 @@ export interface AISettings {
   maxDrawdownPercent: number; // 10-30, maximum portfolio drawdown before emergency exit
 }
 
+interface FundamentalMetrics {
+  epsGrowth: number; // Year-over-year EPS growth percentage
+  roe: number; // Return on Equity percentage
+  salesGrowth: number; // Year-over-year revenue growth percentage
+  peRatio: number; // Price-to-Earnings ratio
+  pbRatio: number; // Price-to-Book ratio
+  debtToEquity: number; // Debt-to-Equity ratio
+  currentRatio: number; // Current assets / Current liabilities
+  grossMargin: number; // Gross profit margin percentage
+  operatingMargin: number; // Operating profit margin percentage
+  fundamentalScore: number; // Combined fundamental score 0-10
+}
+
+interface TechnicalAnalysis {
+  breakoutSignal: boolean; // Price breaking above resistance
+  volumeSurge: boolean; // Volume significantly above average
+  movingAverageSignal: 'bullish' | 'bearish' | 'neutral'; // MA crossover signals
+  rsi: number; // Relative Strength Index
+  macd: 'bullish' | 'bearish' | 'neutral'; // MACD signal
+  supportLevel: number; // Key support price
+  resistanceLevel: number; // Key resistance price
+  trendStrength: number; // 0-10, strength of current trend
+  technicalScore: number; // Combined technical score 0-10
+}
+
 interface MarketAnalysis {
   symbol: string;
   price: number;
@@ -53,6 +78,10 @@ interface MarketAnalysis {
   technicalScore: number;
   sector: string;
   marketCap: 'large' | 'mid' | 'small';
+  // Enhanced with fundamental and technical analysis
+  fundamentals: FundamentalMetrics;
+  technicals: TechnicalAnalysis;
+  combinedScore: number; // Weighted combination of fundamental + technical
   // Trend analysis for exit signals
   trendDirection: 'up' | 'down' | 'sideways';
   trendStrength: number; // 0-1, strength of the trend
@@ -73,6 +102,26 @@ interface PortfolioAllocation {
 export class AIInvestmentEngine {
   private settings: AISettings;
   private marketSymbols = ['AAPL', 'TSLA', 'NVDA', 'MSFT', 'AMZN', 'GOOGL', 'META', 'NFLX', 'AMD', 'INTC', 'CRM', 'UBER', 'DIS', 'V', 'JPM', 'JNJ', 'PG', 'KO', 'PFE', 'WMT'];
+  
+  // Fundamental analysis filters
+  private fundamentalCriteria = {
+    minEpsGrowth: 15, // Minimum 15% EPS growth
+    minRoe: 15, // Minimum 15% ROE
+    minSalesGrowth: 10, // Minimum 10% sales growth
+    maxPeRatio: 30, // Maximum P/E ratio
+    maxDebtToEquity: 0.5, // Maximum debt-to-equity ratio
+    minCurrentRatio: 1.2, // Minimum current ratio for liquidity
+    minGrossMargin: 20, // Minimum gross margin percentage
+  };
+  
+  // Technical breakout criteria
+  private technicalCriteria = {
+    minVolumeIncrease: 1.5, // Volume must be 1.5x average
+    minBreakoutStrength: 2, // Breakout above resistance by 2%
+    maxRsi: 70, // Don't buy if RSI > 70 (overbought)
+    minRsi: 30, // Don't sell if RSI < 30 (oversold)
+    trendStrengthThreshold: 6, // Minimum trend strength for entry
+  };
   private sectorMapping = {
     'AAPL': 'Technology',
     'TSLA': 'Automotive',
@@ -157,7 +206,7 @@ export class AIInvestmentEngine {
   private async performAdvancedMarketAnalysis(marketData: any[]): Promise<MarketAnalysis[]> {
     const analyses: MarketAnalysis[] = [];
     
-    console.log(`🔍 MARKET DATA DEBUG: Received ${marketData.length} stocks for analysis`);
+    console.log(`🔍 ENHANCED ANALYSIS: Starting fundamental + technical screening for ${marketData.length} stocks`);
     if (marketData.length > 0) {
       console.log(`📊 Sample stock data:`, JSON.stringify(marketData[0], null, 2));
     }
@@ -167,6 +216,15 @@ export class AIInvestmentEngine {
         console.log(`⚠️ Skipping invalid stock data:`, stock);
         continue;
       }
+      
+      // Get fundamental metrics
+      const fundamentals = await this.getFundamentalMetrics(stock.symbol);
+      
+      // Get technical analysis
+      const technicals = await this.getTechnicalAnalysis(stock.symbol, stock);
+      
+      // Calculate combined score
+      const combinedScore = this.calculateCombinedScore(fundamentals, technicals);
       
       const analysis: MarketAnalysis = {
         symbol: stock.symbol,
@@ -178,6 +236,10 @@ export class AIInvestmentEngine {
         technicalScore: this.calculateTechnicalScore(stock),
         sector: this.sectorMapping[stock.symbol as keyof typeof this.sectorMapping] || 'Unknown',
         marketCap: this.getMarketCapCategory(stock.symbol),
+        // Enhanced with fundamental and technical analysis
+        fundamentals,
+        technicals,
+        combinedScore,
         // Enhanced trend analysis for exit detection
         trendDirection: this.analyzeTrendDirection(stock),
         trendStrength: this.calculateTrendStrength(stock),
@@ -186,10 +248,16 @@ export class AIInvestmentEngine {
         bearishSignals: this.countBearishSignals(stock)
       };
       
-      analyses.push(analysis);
+      // Only include stocks that pass our fundamental + technical screening
+      if (this.passesScreeningCriteria(fundamentals, technicals)) {
+        analyses.push(analysis);
+        console.log(`✅ ${stock.symbol} passed screening - F:${fundamentals.fundamentalScore.toFixed(1)} T:${technicals.technicalScore.toFixed(1)} Combined:${combinedScore.toFixed(1)}`);
+      } else {
+        console.log(`❌ ${stock.symbol} failed screening - F:${fundamentals.fundamentalScore.toFixed(1)} T:${technicals.technicalScore.toFixed(1)}`);
+      }
     }
     
-    console.log(`✅ ANALYSIS COMPLETE: Generated ${analyses.length} stock analyses`);
+    console.log(`✅ ENHANCED SCREENING COMPLETE: ${analyses.length}/${marketData.length} stocks passed fundamental + technical criteria`);
     return analyses;
   }
 
