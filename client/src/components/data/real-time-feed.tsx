@@ -51,10 +51,11 @@ export function RealTimeFeed({ symbols = [], maxItems = 50 }: RealTimeFeedProps)
       // Generate random data points for demonstration
       const randomStock = marketData[Math.floor(Math.random() * marketData.length)];
       const changePercent = (Math.random() - 0.5) * 8; // -4% to +4%
-      const change = randomStock.price * (changePercent / 100);
-      const newPrice = randomStock.price + change;
+      const stockPrice = Number(randomStock.price) || 100;
+      const change = stockPrice * (changePercent / 100);
+      const newPrice = stockPrice + change;
       const volumeMultiplier = 1 + (Math.random() - 0.5) * 0.6; // 0.7x to 1.3x
-      const newVolume = (randomStock.volume || 1000000) * volumeMultiplier;
+      const newVolume = (Number(randomStock.volume) || 1000000) * volumeMultiplier;
 
       const dataTypes = ['price', 'volume', 'breakout', 'alert'];
       let type = 'price';

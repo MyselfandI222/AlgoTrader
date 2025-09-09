@@ -229,7 +229,7 @@ export default function DataExplorer() {
                       <div>
                         <div className="text-2xl font-bold text-white">{topGainer?.symbol}</div>
                         <p className="text-xs text-green-400">
-                          +{topGainer?.changePercent.toFixed(2)}%
+                          +{Number(topGainer?.changePercent || 0).toFixed(2)}%
                         </p>
                       </div>
                     );
@@ -249,7 +249,7 @@ export default function DataExplorer() {
                       <div>
                         <div className="text-2xl font-bold text-white">{topLoser?.symbol}</div>
                         <p className="text-xs text-red-400">
-                          {topLoser?.changePercent.toFixed(2)}%
+                          {Number(topLoser?.changePercent || 0).toFixed(2)}%
                         </p>
                       </div>
                     );
@@ -389,12 +389,12 @@ export default function DataExplorer() {
                         .map((stock) => (
                           <TableRow key={stock.symbol} className="border-gray-700">
                             <TableCell className="font-medium text-white">{stock.symbol}</TableCell>
-                            <TableCell className="text-gray-300">${stock.price.toFixed(2)}</TableCell>
-                            <TableCell className={stock.change > 0 ? "text-green-400" : "text-red-400"}>
-                              {stock.change > 0 ? "+" : ""}{stock.change.toFixed(2)}
+                            <TableCell className="text-gray-300">${Number(stock.price || 0).toFixed(2)}</TableCell>
+                            <TableCell className={Number(stock.change) > 0 ? "text-green-400" : "text-red-400"}>
+                              {Number(stock.change) > 0 ? "+" : ""}{Number(stock.change || 0).toFixed(2)}
                             </TableCell>
-                            <TableCell className={stock.changePercent > 0 ? "text-green-400" : "text-red-400"}>
-                              {stock.changePercent > 0 ? "+" : ""}{stock.changePercent.toFixed(2)}%
+                            <TableCell className={Number(stock.changePercent) > 0 ? "text-green-400" : "text-red-400"}>
+                              {Number(stock.changePercent) > 0 ? "+" : ""}{Number(stock.changePercent || 0).toFixed(2)}%
                             </TableCell>
                             <TableCell className="text-gray-300">{stock.volume?.toLocaleString() || 'N/A'}</TableCell>
                             <TableCell>
