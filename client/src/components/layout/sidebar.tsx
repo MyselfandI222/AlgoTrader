@@ -8,12 +8,14 @@ import {
   History, 
   Settings,
   Activity,
-  Target
+  Target,
+  Database
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navigation = [
   { name: "Dashboard", href: "/", icon: Activity },
+  { name: "Data Explorer", href: "/data-explorer", icon: Database, highlight: true },
   { name: "My Investments", href: "/portfolio", icon: Briefcase },
   { name: "AI Holdings", href: "/trading", icon: ArrowRightLeft },
   { name: "AI Strategies", href: "/strategies", icon: Bot },
@@ -34,8 +36,8 @@ export function Sidebar() {
             <TrendingUp className="text-white" size={20} />
           </div>
           <div>
-            <h1 className="text-xl font-bold">AutoInvest AI</h1>
-            <p className="text-gray-400 text-sm">AI Investment Manager</p>
+            <h1 className="text-xl font-bold">TradeData AI</h1>
+            <p className="text-gray-400 text-sm">Advanced Data Platform</p>
           </div>
         </div>
       </div>
@@ -45,6 +47,7 @@ export function Sidebar() {
           {navigation.map((item) => {
             const Icon = item.icon;
             const isActive = location === item.href;
+            const isHighlight = item.highlight;
             
             return (
               <li key={item.name}>
@@ -52,6 +55,7 @@ export function Sidebar() {
                   href={item.href}
                   className={cn(
                     "flex items-center px-4 py-3 rounded-lg transition-colors",
+                    isHighlight && !isActive && "bg-gradient-to-r from-blue-600/20 to-purple-600/20 border border-blue-500/30",
                     isActive
                       ? "bg-blue-600 text-white"
                       : "text-gray-300 trading-hover"
