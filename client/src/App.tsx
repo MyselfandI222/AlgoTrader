@@ -10,6 +10,7 @@ import Portfolio from "@/pages/portfolio";
 import Trading from "@/pages/trading";
 import Strategies from "@/pages/strategies";
 import Analytics from "@/pages/analytics";
+import DataExplorer from "@/pages/data-explorer";
 import History from "@/pages/history";
 import PaperTrading from "@/pages/paper-trading";
 import Account from "@/pages/account";
@@ -38,6 +39,7 @@ function Router() {
           <Route path="/trading" component={Trading} />
           <Route path="/strategies" component={Strategies} />
           <Route path="/analytics" component={Analytics} />
+          <Route path="/data-explorer" component={DataExplorer} />
           <Route path="/history" component={History} />
           <Route path="/paper-trading" component={PaperTrading} />
           <Route path="/account" component={Account} />
