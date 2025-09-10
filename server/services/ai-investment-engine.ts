@@ -104,24 +104,24 @@ export class AIInvestmentEngine {
   private settings: AISettings;
   private marketSymbols = ['AAPL', 'TSLA', 'NVDA', 'MSFT', 'AMZN', 'GOOGL', 'META', 'NFLX', 'AMD', 'INTC', 'CRM', 'UBER', 'DIS', 'V', 'JPM', 'JNJ', 'PG', 'KO', 'PFE', 'WMT'];
   
-  // Fundamental analysis filters (relaxed for demo)
+  // Fundamental analysis filters
   private fundamentalCriteria = {
-    minEpsGrowth: 5, // Minimum 5% EPS growth (was 15%)
-    minRoe: 8, // Minimum 8% ROE (was 15%)
-    minSalesGrowth: 3, // Minimum 3% sales growth (was 10%)
-    maxPeRatio: 50, // Maximum P/E ratio (was 30)
-    maxDebtToEquity: 1.0, // Maximum debt-to-equity ratio (was 0.5)
-    minCurrentRatio: 1.0, // Minimum current ratio for liquidity (was 1.2)
-    minGrossMargin: 15, // Minimum gross margin percentage (was 20%)
+    minEpsGrowth: 15, // Minimum 15% EPS growth
+    minRoe: 15, // Minimum 15% ROE
+    minSalesGrowth: 10, // Minimum 10% sales growth
+    maxPeRatio: 30, // Maximum P/E ratio
+    maxDebtToEquity: 0.5, // Maximum debt-to-equity ratio
+    minCurrentRatio: 1.2, // Minimum current ratio for liquidity
+    minGrossMargin: 20, // Minimum gross margin percentage
   };
   
-  // Technical breakout criteria (relaxed for demo)
+  // Technical breakout criteria
   private technicalCriteria = {
-    minVolumeIncrease: 1.2, // Volume must be 1.2x average (was 1.5x)
-    minBreakoutStrength: 1, // Breakout above resistance by 1% (was 2%)
-    maxRsi: 75, // Don't buy if RSI > 75 (was 70, more lenient)
-    minRsi: 25, // Don't sell if RSI < 25 (was 30, more lenient)
-    trendStrengthThreshold: 3, // Minimum trend strength for entry (was 6)
+    minVolumeIncrease: 1.5, // Volume must be 1.5x average
+    minBreakoutStrength: 2, // Breakout above resistance by 2%
+    maxRsi: 70, // Don't buy if RSI > 70 (overbought)
+    minRsi: 30, // Don't sell if RSI < 30 (oversold)
+    trendStrengthThreshold: 6, // Minimum trend strength for entry
   };
   private sectorMapping = {
     'AAPL': 'Technology',
@@ -254,7 +254,7 @@ export class AIInvestmentEngine {
         analyses.push(analysis);
         console.log(`✅ ${stock.symbol} passed screening - F:${fundamentals.fundamentalScore.toFixed(1)} T:${technicals.technicalScore.toFixed(1)} Combined:${combinedScore.toFixed(1)}`);
       } else {
-        console.log(`❌ ${stock.symbol} failed screening - F:${fundamentals.fundamentalScore.toFixed(1)} T:${technicals.technicalScore.toFixed(1)} Combined:${combinedScore.toFixed(1)}`);
+        console.log(`❌ ${stock.symbol} failed screening - F:${fundamentals.fundamentalScore.toFixed(1)} T:${technicals.technicalScore.toFixed(1)}`);
       }
     }
     
@@ -1129,18 +1129,26 @@ export class AIInvestmentEngine {
     return Math.min(score, 10); // Cap at 10
   }
   
-  // Combined fundamental and technical screening (flexible approach)
+  // Combined fundamental and technical screening
   private passesScreeningCriteria(fundamentals: FundamentalMetrics, technicals: TechnicalAnalysis): boolean {
-    // Calculate combined score (60% fundamental, 40% technical)
-    const combinedScore = this.calculateCombinedScore(fundamentals, technicals);
+    // Fundamental criteria
+    const fundamentalPass = 
+      fundamentals.epsGrowth >= this.fundamentalCriteria.minEpsGrowth &&
+      fundamentals.roe >= this.fundamentalCriteria.minRoe &&
+      fundamentals.salesGrowth >= this.fundamentalCriteria.minSalesGrowth &&
+      fundamentals.peRatio <= this.fundamentalCriteria.maxPeRatio &&
+      fundamentals.debtToEquity <= this.fundamentalCriteria.maxDebtToEquity &&
+      fundamentals.currentRatio >= this.fundamentalCriteria.minCurrentRatio;
     
-    // Flexible criteria - allow strong companies even in weak technical environments
-    const strongFundamentals = fundamentals.fundamentalScore >= 6.0;
-    const decentTechnicals = technicals.technicalScore >= 2.0;
-    const minimumCombined = combinedScore >= 4.5; // Lower threshold for combined
+    // Technical criteria
+    const technicalPass = 
+      technicals.breakoutSignal &&
+      technicals.volumeSurge &&
+      technicals.rsi <= this.technicalCriteria.maxRsi &&
+      technicals.trendStrength >= this.technicalCriteria.trendStrengthThreshold;
     
-    // Pass if: strong combined score OR strong fundamentals with decent technicals
-    return minimumCombined || (strongFundamentals && decentTechnicals);
+    // Both fundamental and technical criteria must pass
+    return fundamentalPass && technicalPass;
   }
   
   // Combined scoring system

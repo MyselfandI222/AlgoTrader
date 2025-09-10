@@ -5,7 +5,6 @@ import { insertUserSchema, insertTradeSchema, insertTransactionSchema, updatePro
 import { createStrategyRoutes } from "./routes/strategy-routes.js";
 import { marketDataService } from "./services/market-data-service.js";
 import { setupAuth, requireAuth } from "./auth";
-import { aiInvestmentEngine } from "./services/ai-investment-engine.js";
 import { z } from "zod";
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -1028,56 +1027,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get ranked signals for external consumption (FastAPI integration)
-  app.get("/api/signals", async (req, res) => {
-    try {
-      const limitParam = req.query.limit as string;
-      const limit = limitParam ? parseInt(limitParam) : 5;
-      
-      // Get AI investment decisions with full analysis
-      const { aiInvestmentEngine } = await import("./services/ai-investment-engine.js");
-      const decisions = await aiInvestmentEngine.analyzeMarketAndMakeDecisions();
-      
-      // Filter for buy decisions and sort by confidence/priority
-      const buyDecisions = decisions
-        .filter(d => d.action === 'buy')
-        .sort((a, b) => {
-          // Sort by confidence first, then by expected return
-          if (b.confidence !== a.confidence) {
-            return b.confidence - a.confidence;
-          }
-          return b.expectedReturn - a.expectedReturn;
-        })
-        .slice(0, limit);
-
-      // Extract symbols for external API
-      const rankedSymbols = buyDecisions.map(d => d.symbol);
-      
-      // Return in the format expected by the external FastAPI system
-      res.json({
-        ranked: rankedSymbols,
-        meta: {
-          total_analyzed: decisions.length,
-          buy_signals: buyDecisions.length,
-          timestamp: new Date().toISOString(),
-          analysis_details: buyDecisions.map(d => ({
-            symbol: d.symbol,
-            confidence: d.confidence,
-            expected_return: d.expectedReturn,
-            risk_score: d.riskScore,
-            strategy: d.strategy,
-            reasoning: d.reasoning
-          }))
-        }
-      });
-    } catch (error) {
-      console.error('Error getting ranked signals:', error);
-      res.status(500).json({ 
-        error: "Failed to get ranked signals",
-        ranked: [] // Return empty array as fallback for external systems
-      });
-    }
-  });
 
   // Register strategy routes
   app.use(createStrategyRoutes(storage));
