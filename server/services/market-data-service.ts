@@ -421,8 +421,8 @@ export class YahooFinanceProvider implements MarketDataProvider {
   }
 
   private normalizeYahooQuote(quote: any, symbol: string): StockQuote {
-    const price = quote.regularMarketPrice || quote.currentPrice || 0;
-    const previousClose = quote.regularMarketPreviousClose || quote.previousClose || price;
+    const price = quote.regularMarketPrice || 0;
+    const previousClose = quote.regularMarketPreviousClose || price;
     const change = price - previousClose;
     const changePercent = previousClose !== 0 ? (change / previousClose) * 100 : 0;
 
@@ -431,7 +431,7 @@ export class YahooFinanceProvider implements MarketDataProvider {
       price: price.toString(),
       change: change.toFixed(2),
       changePercent: changePercent.toFixed(2),
-      volume: quote.regularMarketVolume || quote.volume || 0,
+      volume: quote.regularMarketVolume || 0,
       timestamp: new Date()
     };
   }
@@ -464,13 +464,13 @@ export class YahooFinanceProvider implements MarketDataProvider {
         if (Array.isArray(quotes)) {
           // Multiple symbols returned as array
           for (const quote of quotes) {
-            if (quote && quote.symbol && (quote.regularMarketPrice || quote.currentPrice)) {
+            if (quote && quote.symbol && quote.regularMarketPrice) {
               results.push(this.normalizeYahooQuote(quote, quote.symbol));
             }
           }
         } else if (quotes && typeof quotes === 'object') {
           // Single symbol returned as object
-          if (quotes.regularMarketPrice || quotes.currentPrice) {
+          if (quotes.regularMarketPrice) {
             results.push(this.normalizeYahooQuote(quotes, batch[0]));
           }
         }

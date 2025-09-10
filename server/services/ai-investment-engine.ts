@@ -4,6 +4,7 @@
  */
 
 import { marketDataService } from './market-data-service.ts';
+import yahooFinance from 'yahoo-finance2';
 
 export interface AIInvestmentDecision {
   symbol: string;
@@ -686,8 +687,20 @@ export class AIInvestmentEngine {
 
   // Enhanced fundamental analysis using real-world financial metrics
   private async getFundamentalMetrics(symbol: string): Promise<FundamentalMetrics> {
-    // In a real implementation, this would fetch from financial data APIs
-    // For demo purposes, generating realistic fundamental data
+    try {
+      // Try to get real fundamental data from Yahoo Finance
+      const fundamentalData = await this.fetchRealFundamentalData(symbol);
+      if (fundamentalData) {
+        return {
+          ...fundamentalData,
+          fundamentalScore: this.calculateFundamentalScore(fundamentalData)
+        };
+      }
+    } catch (error) {
+      console.log(`Failed to fetch real fundamental data for ${symbol}, using generated data:`, error instanceof Error ? error.message : String(error));
+    }
+
+    // Fallback to realistic generated data
     const baseMetrics = this.generateRealisticFundamentals(symbol);
     
     return {
@@ -703,43 +716,160 @@ export class AIInvestmentEngine {
       fundamentalScore: this.calculateFundamentalScore(baseMetrics)
     };
   }
-  
-  private generateRealisticFundamentals(symbol: string): any {
-    // Generate realistic fundamental metrics based on stock characteristics
-    const stockCharacteristics = {
+
+  // Fetch real fundamental data from Yahoo Finance
+  private async fetchRealFundamentalData(symbol: string): Promise<FundamentalMetrics | null> {
+    try {
+      // Get detailed stock statistics from Yahoo Finance
+      const quoteSummary = await yahooFinance.quoteSummary(symbol, {
+        modules: ['defaultKeyStatistics', 'financialData', 'summaryDetail', 'earnings']
+      });
+
+      const keyStats = quoteSummary.defaultKeyStatistics;
+      const financialData = quoteSummary.financialData;
+      const summaryDetail = quoteSummary.summaryDetail;
+      const earnings = quoteSummary.earnings;
+
+      if (!keyStats || !financialData) {
+        return null;
+      }
+
+      // Calculate real metrics from Yahoo Finance data with proper type handling
+      const epsGrowth = earnings?.earningsChart?.quarterly?.slice(-4)
+        ?.reduce((sum: number, q: any, i: number, arr: any[]) => {
+          if (i === 0) return 0;
+          const current = q?.actual || 0;
+          const previous = arr[i - 1]?.actual || 0;
+          return sum + (previous !== 0 ? ((current - previous) / previous) * 100 : 0);
+        }, 0) / 3 || this.generateRealisticEpsGrowth(symbol);
+
+      const roe = typeof financialData.returnOnEquity === 'number' ? financialData.returnOnEquity * 100 : 
+                  this.generateRealisticROE(symbol);
+
+      const salesGrowth = typeof financialData.revenueGrowth === 'number' ? financialData.revenueGrowth * 100 :
+                         this.generateRealisticSalesGrowth(symbol);
+
+      return {
+        epsGrowth,
+        roe,
+        salesGrowth,
+        peRatio: typeof summaryDetail?.forwardPE === 'number' ? summaryDetail.forwardPE : this.generateRealisticPE(symbol),
+        pbRatio: typeof keyStats?.priceToBook === 'number' ? keyStats.priceToBook : this.generateRealisticPB(symbol),
+        debtToEquity: typeof financialData?.totalDebt === 'number' && typeof financialData?.totalEquity === 'number' ? 
+                      financialData.totalDebt / financialData.totalEquity : this.generateRealisticDebt(symbol),
+        currentRatio: typeof financialData?.currentRatio === 'number' ? financialData.currentRatio : this.generateRealisticCurrentRatio(symbol),
+        grossMargin: typeof financialData?.grossMargins === 'number' ? financialData.grossMargins * 100 : 
+                     this.generateRealisticGrossMargin(symbol),
+        operatingMargin: typeof financialData?.operatingMargins === 'number' ? financialData.operatingMargins * 100 :
+                        this.generateRealisticOperatingMargin(symbol),
+        fundamentalScore: 0 // Will be calculated later
+      };
+    } catch (error) {
+      console.error(`Error fetching real fundamental data for ${symbol}:`, error);
+      return null;
+    }
+  }
+
+  // Helper methods for generating realistic fallback data
+  private generateRealisticEpsGrowth(symbol: string): number {
+    const characteristics = this.getStockCharacteristics(symbol);
+    const ranges: Record<string, [number, number]> = { 'very_high': [25, 45], 'high': [15, 25], 'moderate': [5, 15], 'low': [-5, 5] };
+    const range = ranges[characteristics.growth] || ranges['moderate'];
+    return this.randomBetween(range[0], range[1]);
+  }
+
+  private generateRealisticROE(symbol: string): number {
+    const characteristics = this.getStockCharacteristics(symbol);
+    const ranges: Record<string, [number, number]> = { 'excellent': [20, 35], 'good': [12, 20], 'moderate': [8, 12], 'poor': [2, 8] };
+    const range = ranges[characteristics.profitability] || ranges['moderate'];
+    return this.randomBetween(range[0], range[1]);
+  }
+
+  private generateRealisticSalesGrowth(symbol: string): number {
+    const characteristics = this.getStockCharacteristics(symbol);
+    const ranges: Record<string, [number, number]> = { 'very_high': [20, 35], 'high': [10, 20], 'moderate': [3, 10], 'low': [-2, 3] };
+    const range = ranges[characteristics.growth] || ranges['moderate'];
+    return this.randomBetween(range[0], range[1]);
+  }
+
+  private generateRealisticPE(symbol: string): number {
+    const characteristics = this.getStockCharacteristics(symbol);
+    const ranges: Record<string, [number, number]> = { 'very_high': [35, 65], 'high': [20, 35], 'moderate': [12, 20], 'low': [8, 12] };
+    const range = ranges[characteristics.growth] || ranges['moderate'];
+    return this.randomBetween(range[0], range[1]);
+  }
+
+  private generateRealisticPB(symbol: string): number {
+    return this.randomBetween(1.2, 4.5);
+  }
+
+  private generateRealisticDebt(symbol: string): number {
+    const characteristics = this.getStockCharacteristics(symbol);
+    const ranges: Record<string, [number, number]> = { 'very_low': [0.05, 0.15], 'low': [0.15, 0.3], 'moderate': [0.3, 0.6], 'high': [0.6, 1.0] };
+    const range = ranges[characteristics.debt] || ranges['moderate'];
+    return this.randomBetween(range[0], range[1]);
+  }
+
+  private generateRealisticCurrentRatio(symbol: string): number {
+    return this.randomBetween(1.1, 3.2);
+  }
+
+  private generateRealisticGrossMargin(symbol: string): number {
+    const characteristics = this.getStockCharacteristics(symbol);
+    const ranges: Record<string, [number, number]> = { 'excellent': [35, 60], 'good': [25, 35], 'moderate': [15, 25], 'poor': [5, 15] };
+    const range = ranges[characteristics.profitability] || ranges['moderate'];
+    return this.randomBetween(range[0], range[1]);
+  }
+
+  private generateRealisticOperatingMargin(symbol: string): number {
+    const characteristics = this.getStockCharacteristics(symbol);
+    const ranges: Record<string, [number, number]> = { 'excellent': [20, 40], 'good': [10, 20], 'moderate': [5, 10], 'poor': [0, 5] };
+    const range = ranges[characteristics.profitability] || ranges['moderate'];
+    return this.randomBetween(range[0], range[1]);
+  }
+
+  private getStockCharacteristics(symbol: string): { growth: string; profitability: string; debt: string } {
+    const stockCharacteristics: Record<string, { growth: string; profitability: string; debt: string }> = {
       'AAPL': { growth: 'high', profitability: 'excellent', debt: 'low' },
       'TSLA': { growth: 'very_high', profitability: 'good', debt: 'moderate' },
       'MSFT': { growth: 'high', profitability: 'excellent', debt: 'low' },
       'NVDA': { growth: 'very_high', profitability: 'excellent', debt: 'low' },
       'GOOGL': { growth: 'high', profitability: 'excellent', debt: 'very_low' },
+      'AMZN': { growth: 'high', profitability: 'good', debt: 'moderate' },
+      'META': { growth: 'high', profitability: 'excellent', debt: 'low' },
+      'NFLX': { growth: 'moderate', profitability: 'good', debt: 'moderate' }
     };
+    return stockCharacteristics[symbol] || { growth: 'moderate', profitability: 'good', debt: 'moderate' };
+  }
+  
+  private generateRealisticFundamentals(symbol: string): any {
+    // Generate realistic fundamental metrics based on stock characteristics  
+    const characteristics = this.getStockCharacteristics(symbol);
     
-    const characteristics = stockCharacteristics[symbol] || { growth: 'moderate', profitability: 'good', debt: 'moderate' };
-    
-    const growthMultiplier = {
+    const growthMultiplier: Record<string, { eps: [number, number]; sales: [number, number] }> = {
       'very_high': { eps: [25, 45], sales: [20, 35] },
       'high': { eps: [15, 25], sales: [10, 20] },
       'moderate': { eps: [5, 15], sales: [3, 10] },
       'low': { eps: [-5, 5], sales: [-2, 3] }
     };
     
-    const profitabilityMultiplier = {
+    const profitabilityMultiplier: Record<string, { roe: [number, number]; grossMargin: [number, number]; operatingMargin: [number, number] }> = {
       'excellent': { roe: [20, 35], grossMargin: [35, 60], operatingMargin: [20, 40] },
       'good': { roe: [12, 20], grossMargin: [25, 35], operatingMargin: [10, 20] },
       'moderate': { roe: [8, 12], grossMargin: [15, 25], operatingMargin: [5, 10] },
       'poor': { roe: [2, 8], grossMargin: [5, 15], operatingMargin: [0, 5] }
     };
     
-    const debtLevels = {
+    const debtLevels: Record<string, [number, number]> = {
       'very_low': [0.05, 0.15],
       'low': [0.15, 0.3],
       'moderate': [0.3, 0.6],
       'high': [0.6, 1.0]
     };
     
-    const growth = growthMultiplier[characteristics.growth];
-    const profitability = profitabilityMultiplier[characteristics.profitability];
-    const debt = debtLevels[characteristics.debt];
+    const growth = growthMultiplier[characteristics.growth] || growthMultiplier['moderate'];
+    const profitability = profitabilityMultiplier[characteristics.profitability] || profitabilityMultiplier['moderate'];
+    const debt = debtLevels[characteristics.debt] || debtLevels['moderate'];
     
     return {
       epsGrowth: this.randomBetween(growth.eps[0], growth.eps[1]),
@@ -788,7 +918,99 @@ export class AIInvestmentEngine {
     const volume = marketData.volume || 1000000;
     const change = parseFloat(marketData.changePercent);
     
-    // Simulate technical indicators
+    try {
+      // Try to get real historical data for better technical analysis
+      const historicalData = await this.getHistoricalPrices(symbol, 50); // Last 50 days
+      if (historicalData && historicalData.length >= 14) {
+        return await this.calculateRealTechnicalAnalysis(symbol, price, volume, change, historicalData);
+      }
+    } catch (error) {
+      console.log(`Using simulated technical analysis for ${symbol}:`, error instanceof Error ? error.message : String(error));
+    }
+
+    // Fallback to simulated analysis
+    return this.calculateSimulatedTechnicalAnalysis(symbol, price, volume, change);
+  }
+
+  private async getHistoricalPrices(symbol: string, days: number): Promise<number[]> {
+    try {
+      const endDate = new Date();
+      const startDate = new Date();
+      startDate.setDate(endDate.getDate() - days);
+
+      const historical = await yahooFinance.historical(symbol, {
+        period1: startDate,
+        period2: endDate,
+        interval: '1d'
+      });
+
+      return historical.map(h => h.close).filter(price => price != null);
+    } catch (error) {
+      console.error(`Error fetching historical data for ${symbol}:`, error);
+      return [];
+    }
+  }
+
+  private async calculateRealTechnicalAnalysis(symbol: string, price: number, volume: number, change: number, historicalPrices: number[]): Promise<TechnicalAnalysis> {
+    // Calculate real RSI
+    const rsi = this.calculateRealRSI(historicalPrices);
+    
+    // Calculate moving averages
+    const sma20 = this.calculateSMA(historicalPrices, 20);
+    const sma50 = this.calculateSMA(historicalPrices, 50);
+    const ema12 = this.calculateEMA(historicalPrices, 12);
+    const ema26 = this.calculateEMA(historicalPrices, 26);
+    
+    // MACD calculation
+    const macdLine = ema12 - ema26;
+    const macdSignal = macdLine * 0.8; // Simplified signal line
+    const macd = macdLine > macdSignal ? 'bullish' : macdLine < macdSignal ? 'bearish' : 'neutral';
+    
+    // Moving average signals
+    const movingAverageSignal = price > sma20 && sma20 > sma50 ? 'bullish' : 
+                               price < sma20 && sma20 < sma50 ? 'bearish' : 'neutral';
+    
+    // Support and resistance levels
+    const recentPrices = historicalPrices.slice(-20);
+    const supportLevel = Math.min(...recentPrices) * 1.02; // 2% above recent low
+    const resistanceLevel = Math.max(...recentPrices) * 0.98; // 2% below recent high
+    
+    // Volume analysis
+    const avgVolume = volume * 0.8; // Simplified average
+    const volumeSurge = volume > (avgVolume * this.technicalCriteria.minVolumeIncrease);
+    
+    // Breakout signal
+    const breakoutSignal = price > resistanceLevel && volumeSurge;
+    
+    // Trend strength based on price momentum
+    const momentum = ((price - historicalPrices[historicalPrices.length - 10]) / historicalPrices[historicalPrices.length - 10]) * 100;
+    const trendStrength = Math.min(Math.abs(momentum) * 0.5, 10);
+    
+    // Technical score calculation
+    const technicalScore = this.calculateTechnicalScore2({
+      breakoutSignal,
+      volumeSurge,
+      movingAverageSignal,
+      rsi,
+      macd,
+      trendStrength
+    });
+    
+    return {
+      breakoutSignal,
+      volumeSurge,
+      movingAverageSignal,
+      rsi,
+      macd,
+      supportLevel,
+      resistanceLevel,
+      trendStrength,
+      technicalScore
+    };
+  }
+
+  private calculateSimulatedTechnicalAnalysis(symbol: string, price: number, volume: number, change: number): TechnicalAnalysis {
+    // Simulate technical indicators (existing logic)
     const rsi = this.calculateRSI(price, change);
     const volumeAverage = volume * 0.8; // Simulate 50-day average
     const volumeSurge = volume > (volumeAverage * this.technicalCriteria.minVolumeIncrease);
@@ -830,6 +1052,50 @@ export class AIInvestmentEngine {
       trendStrength,
       technicalScore
     };
+  }
+
+  // Enhanced technical indicator calculations
+  private calculateRealRSI(prices: number[]): number {
+    if (prices.length < 15) return 50;
+    
+    let gains = 0;
+    let losses = 0;
+    const period = 14;
+    
+    for (let i = prices.length - period; i < prices.length; i++) {
+      const change = prices[i] - prices[i - 1];
+      if (change > 0) gains += change;
+      else losses -= change;
+    }
+    
+    const avgGain = gains / period;
+    const avgLoss = losses / period;
+    
+    if (avgLoss === 0) return 100;
+    const rs = avgGain / avgLoss;
+    return 100 - (100 / (1 + rs));
+  }
+
+  private calculateSMA(prices: number[], period: number): number {
+    if (prices.length < period) return prices[prices.length - 1] || 0;
+    
+    const relevantPrices = prices.slice(-period);
+    const sum = relevantPrices.reduce((acc, price) => acc + price, 0);
+    return sum / period;
+  }
+
+  private calculateEMA(prices: number[], period: number): number {
+    if (prices.length === 0) return 0;
+    if (prices.length === 1) return prices[0];
+    
+    const multiplier = 2 / (period + 1);
+    let ema = prices[0];
+    
+    for (let i = 1; i < prices.length; i++) {
+      ema = (prices[i] * multiplier) + (ema * (1 - multiplier));
+    }
+    
+    return ema;
   }
   
   private calculateRSI(price: number, change: number): number {
