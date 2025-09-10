@@ -587,13 +587,9 @@ export class MarketDataService {
         price: price.toFixed(2),
         change: change.toFixed(2),
         changePercent: changePercent.toFixed(2),
-        volume: Math.floor(Math.random() * 50000000 + 10000000).toString(),
-        marketCap: Math.floor(Math.random() * 1000000000000 + 100000000000).toString(),
-        peRatio: (Math.random() * 40 + 10).toFixed(2),
-        dividend: (Math.random() * 5).toFixed(2),
-        high52Week: (price * (1.4 + Math.random() * 0.3)).toFixed(2),
-        low52Week: (price * (0.6 + Math.random() * 0.2)).toFixed(2)
-      } as StockQuote;
+        volume: Math.floor(Math.random() * 50000000 + 10000000),
+        timestamp: new Date()
+      };
     });
   }
 
