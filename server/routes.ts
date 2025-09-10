@@ -1035,7 +1035,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const limit = limitParam ? parseInt(limitParam) : 5;
       
       // Get AI investment decisions with full analysis
-      const { aiInvestmentEngine } = await import("./services/ai-investment-engine.ts");
+      const { aiInvestmentEngine } = await import("./services/ai-investment-engine.js");
       const decisions = await aiInvestmentEngine.analyzeMarketAndMakeDecisions();
       
       // Filter for buy decisions and sort by confidence/priority
