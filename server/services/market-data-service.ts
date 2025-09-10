@@ -3,6 +3,8 @@
  * Supports multiple APIs with fallback capabilities
  */
 
+import yahooFinance from 'yahoo-finance2';
+
 interface HistoricalPrice {
   date: string;
   price: number;
@@ -411,6 +413,132 @@ export class FinnhubProvider implements MarketDataProvider {
 }
 
 // Fallback provider using simulated data
+export class YahooFinanceProvider implements MarketDataProvider {
+  name = "Yahoo Finance";
+
+  isConfigured(): boolean {
+    return true; // Yahoo Finance doesn't require API keys
+  }
+
+  private normalizeYahooQuote(quote: any, symbol: string): StockQuote {
+    const price = quote.regularMarketPrice || quote.currentPrice || 0;
+    const previousClose = quote.regularMarketPreviousClose || quote.previousClose || price;
+    const change = price - previousClose;
+    const changePercent = previousClose !== 0 ? (change / previousClose) * 100 : 0;
+
+    return {
+      symbol: quote.symbol || symbol,
+      price: price.toString(),
+      change: change.toFixed(2),
+      changePercent: changePercent.toFixed(2),
+      volume: quote.regularMarketVolume || quote.volume || 0,
+      timestamp: new Date()
+    };
+  }
+
+  async getQuote(symbol: string): Promise<StockQuote> {
+    try {
+      const quote = await yahooFinance.quote(symbol);
+      
+      if (!quote) {
+        throw new Error(`No data found for symbol: ${symbol}`);
+      }
+
+      return this.normalizeYahooQuote(quote, symbol);
+    } catch (error) {
+      console.error(`Yahoo Finance API error for ${symbol}:`, error);
+      throw error;
+    }
+  }
+
+  async getMultipleQuotes(symbols: string[]): Promise<StockQuote[]> {
+    try {
+      // Process symbols in smaller batches to avoid timeouts
+      const batchSize = 50;
+      const results: StockQuote[] = [];
+
+      for (let i = 0; i < symbols.length; i += batchSize) {
+        const batch = symbols.slice(i, i + batchSize);
+        const quotes = await yahooFinance.quote(batch);
+
+        if (Array.isArray(quotes)) {
+          // Multiple symbols returned as array
+          for (const quote of quotes) {
+            if (quote && quote.symbol && (quote.regularMarketPrice || quote.currentPrice)) {
+              results.push(this.normalizeYahooQuote(quote, quote.symbol));
+            }
+          }
+        } else if (quotes && typeof quotes === 'object') {
+          // Single symbol returned as object
+          if (quotes.regularMarketPrice || quotes.currentPrice) {
+            results.push(this.normalizeYahooQuote(quotes, batch[0]));
+          }
+        }
+      }
+
+      return results;
+    } catch (error) {
+      console.error(`Yahoo Finance batch API error:`, error);
+      throw error;
+    }
+  }
+
+  async getHistoricalData(symbol: string, period: string): Promise<HistoricalPrice[]> {
+    try {
+      // Map period to Yahoo Finance format
+      const periodMap: Record<string, { period1: string, interval: string }> = {
+        '1D': { period1: '1d', interval: '1h' },
+        '7D': { period1: '7d', interval: '1d' },
+        '30D': { period1: '1mo', interval: '1d' },
+        '90D': { period1: '3mo', interval: '1d' },
+        '1Y': { period1: '1y', interval: '1wk' },
+        '2Y': { period1: '2y', interval: '1mo' }
+      };
+
+      const config = periodMap[period] || periodMap['30D'];
+      const endDate = new Date();
+      const startDate = new Date();
+      
+      // Calculate start date based on period
+      switch (config.period1) {
+        case '1d':
+          startDate.setDate(endDate.getDate() - 1);
+          break;
+        case '7d':
+          startDate.setDate(endDate.getDate() - 7);
+          break;
+        case '1mo':
+          startDate.setMonth(endDate.getMonth() - 1);
+          break;
+        case '3mo':
+          startDate.setMonth(endDate.getMonth() - 3);
+          break;
+        case '1y':
+          startDate.setFullYear(endDate.getFullYear() - 1);
+          break;
+        case '2y':
+          startDate.setFullYear(endDate.getFullYear() - 2);
+          break;
+      }
+
+      const historical = await yahooFinance.historical(symbol, {
+        period1: startDate,
+        period2: endDate,
+        interval: config.interval as any
+      });
+
+      return historical.map(item => ({
+        date: item.date.toISOString().split('T')[0],
+        price: item.close || 0,
+        volume: item.volume || 0
+      }));
+    } catch (error) {
+      console.error(`Yahoo Finance historical data error for ${symbol}:`, error);
+      throw error;
+    }
+  }
+}
+
 export class MockProvider implements MarketDataProvider {
   name = "Mock Data";
 
@@ -464,6 +592,7 @@ export class MarketDataService {
   constructor() {
     // Initialize providers in order of preference (best free ones first!)
     this.providers = [
+      new YahooFinanceProvider(), // Unlimited, no API key required - BEST!
       new IEXCloudProvider(),     // 50,000 calls/month FREE
       new TwelvedataProvider(),   // 800 calls/day FREE  
       new AlphaVantageProvider(), // 25 calls/day free (fallback)
