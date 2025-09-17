@@ -18,7 +18,6 @@ const navigation = [
   { name: "Data Explorer", href: "/data-explorer", icon: Database, highlight: true },
   { name: "My Investments", href: "/portfolio", icon: Briefcase },
   { name: "AI Holdings", href: "/trading", icon: ArrowRightLeft },
-  { name: "AI Strategies", href: "/strategies", icon: Bot },
   { name: "Performance", href: "/analytics", icon: BarChart3 },
   { name: "Investment History", href: "/history", icon: History },
   { name: "Paper Trading", href: "/paper-trading", icon: Target },
