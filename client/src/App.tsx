@@ -45,7 +45,6 @@ function Router() {
           <Route path="/account" component={Account} />
           <Route path="/login" component={() => { window.location.href = '/'; return null; }} />
           <Route path="/signup" component={() => { window.location.href = '/'; return null; }} />
-          <Route component={NotFound} />
         </>
       ) : (
         // Unauthenticated routes
