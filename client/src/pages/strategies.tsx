@@ -79,7 +79,12 @@ export default function Strategies() {
 
             {/* Tab Content */}
             {activeTab === "overview" && <StrategyOverview />}
-            {activeTab === "strategies" && <StrategyList />}
+            {activeTab === "strategies" && 
+              <StrategyList 
+                onNavigateToBacktest={() => setActiveTab("backtest")}
+                onNavigateToRisk={() => setActiveTab("risk")}
+              />
+            }
             {activeTab === "allocation" && <AllocationVisualization />}
             {activeTab === "exits" && <ExitSignalsMonitor />}
             {activeTab === "stoploss" && <StopLossDashboard />}

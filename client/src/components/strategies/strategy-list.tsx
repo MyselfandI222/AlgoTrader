@@ -8,6 +8,11 @@ import { useTradingData } from "@/hooks/use-trading-data";
 import { useAISettings, useToggleStrategy, useUpdateStrategyAllocation } from "@/hooks/use-ai-settings";
 import { Brain, TrendingUp, Shield, Zap, BarChart3, Target, Settings } from "lucide-react";
 
+interface StrategyListProps {
+  onNavigateToBacktest?: () => void;
+  onNavigateToRisk?: () => void;
+}
+
 const STRATEGY_TYPES = [
   {
     id: "momentum",
@@ -71,7 +76,7 @@ const STRATEGY_TYPES = [
   }
 ];
 
-export function StrategyList() {
+export function StrategyList({ onNavigateToBacktest, onNavigateToRisk }: StrategyListProps = {}) {
   const { strategies } = useTradingData();
   const { data: aiSettings } = useAISettings();
   const toggleStrategy = useToggleStrategy();
@@ -206,7 +211,7 @@ export function StrategyList() {
                         data-testid={`button-backtest-${strategy.id}`}
                         onClick={(e) => {
                           e.stopPropagation();
-                          window.location.href = '/strategies?tab=backtest';
+                          onNavigateToBacktest?.();
                         }}
                       >
                         <BarChart3 size={14} className="mr-2" />
@@ -219,7 +224,7 @@ export function StrategyList() {
                         data-testid={`button-configure-${strategy.id}`}
                         onClick={(e) => {
                           e.stopPropagation();
-                          window.location.href = '/strategies?tab=risk';
+                          onNavigateToRisk?.();
                         }}
                       >
                         <Settings size={14} className="mr-2" />
