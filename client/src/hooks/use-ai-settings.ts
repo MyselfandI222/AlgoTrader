@@ -18,6 +18,7 @@ export interface AISettings {
   takeProfitPercent: number;
   enableTrendExit: boolean;
   maxDrawdownPercent: number;
+  strategyAllocations?: Record<string, number>;
 }
 
 export interface StrategyAllocation {

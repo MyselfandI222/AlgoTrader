@@ -5,6 +5,7 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Slider } from "@/components/ui/slider";
 import { useTradingData } from "@/hooks/use-trading-data";
+import { useAISettings, useToggleStrategy, useUpdateStrategyAllocation } from "@/hooks/use-ai-settings";
 import { Brain, TrendingUp, Shield, Zap, BarChart3, Target, Settings } from "lucide-react";
 
 const STRATEGY_TYPES = [
@@ -72,10 +73,13 @@ const STRATEGY_TYPES = [
 
 export function StrategyList() {
   const { strategies } = useTradingData();
+  const { data: aiSettings } = useAISettings();
+  const toggleStrategy = useToggleStrategy();
+  const updateAllocation = useUpdateStrategyAllocation();
   const [selectedStrategy, setSelectedStrategy] = useState<string | null>(null);
 
-  // Create strategy status map
-  const activeStrategies = new Set(strategies?.filter(s => s.isActive).map(s => s.name) || []);
+  // Create strategy status map from AI settings
+  const activeStrategies = new Set((aiSettings as any)?.strategies || []);
 
   const getRiskColor = (level: string) => {
     switch (level) {
@@ -99,8 +103,9 @@ export function StrategyList() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {STRATEGY_TYPES.map((strategy) => {
           const Icon = strategy.icon;
-          const isActive = activeStrategies.has(strategy.name);
+          const isActive = activeStrategies.has(strategy.id);
           const userStrategy = strategies?.find(s => s.name === strategy.name);
+          const allocationPercentage = (aiSettings as any)?.strategyAllocations?.[strategy.id] || 10;
           
           return (
             <Card 
@@ -124,11 +129,11 @@ export function StrategyList() {
                   </div>
                   <Switch 
                     checked={isActive}
-                    onCheckedChange={() => {
-                      // In a real app, this would update the strategy status
-                      console.log(`Toggle ${strategy.name}`);
+                    onCheckedChange={(enabled) => {
+                      toggleStrategy.mutate({ strategyId: strategy.id, enabled });
                     }}
                     data-testid={`switch-${strategy.id}`}
+                    disabled={toggleStrategy.isPending}
                   />
                 </div>
               </CardHeader>
@@ -155,19 +160,19 @@ export function StrategyList() {
                   <div className="pt-4 border-t border-gray-700 space-y-4">
                     <div>
                       <label className="text-sm font-medium mb-2 block">
-                        Risk Allocation: {userStrategy?.riskAllocation || "10"}%
+                        Risk Allocation: {allocationPercentage}%
                       </label>
                       <Slider
-                        value={[parseFloat(userStrategy?.riskAllocation || "10")]}
-                        onValueChange={(value) => {
-                          // In a real app, this would update the allocation
-                          console.log(`Update allocation for ${strategy.name}: ${value[0]}%`);
+                        value={[allocationPercentage]}
+                        onValueChange={([value]) => {
+                          updateAllocation.mutate({ strategyId: strategy.id, allocation: value });
                         }}
                         max={50}
                         min={1}
                         step={1}
                         className="w-full"
                         data-testid={`slider-${strategy.id}`}
+                        disabled={updateAllocation.isPending}
                       />
                     </div>
 
