@@ -164,7 +164,7 @@ export function StrategyList() {
                       </label>
                       <Slider
                         value={[allocationPercentage]}
-                        onValueChange={([value]) => {
+                        onValueCommit={([value]) => {
                           updateAllocation.mutate({ strategyId: strategy.id, allocation: value });
                         }}
                         max={50}

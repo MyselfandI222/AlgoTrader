@@ -53,12 +53,20 @@ export function useUpdateAISettings() {
       
       return response.json();
     },
-    onSuccess: () => {
+    onSuccess: (data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['/api/ai/settings'] });
-      toast({
-        title: "Settings Updated",
-        description: "AI strategy settings have been saved successfully.",
-      });
+      // Only show toast for strategy toggles, not allocation changes
+      if ('strategies' in variables) {
+        toast({
+          title: "Strategy Updated",
+          description: "AI strategy configuration has been saved successfully.",
+        });
+      } else if ('strategyAllocations' in variables) {
+        toast({
+          title: "Allocation Updated", 
+          description: "Strategy allocation has been updated successfully.",
+        });
+      }
     },
     onError: (error) => {
       toast({
