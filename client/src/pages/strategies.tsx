@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Sidebar } from "@/components/layout/sidebar";
 import { TopBar } from "@/components/layout/topbar";
 import { StrategyOverview } from "@/components/strategies/strategy-overview";
@@ -18,6 +18,15 @@ import { Brain, Shield, BarChart3, Activity, Target, Key, AlertTriangle } from "
 export default function Strategies() {
   const [activeTab, setActiveTab] = useState<"overview" | "strategies" | "allocation" | "exits" | "stoploss" | "advanced-risk" | "risk" | "engine" | "backtest" | "config" | "api">("overview");
   const [selectedStrategy, setSelectedStrategy] = useState<{ id: string; name: string } | null>(null);
+
+  // Handle URL parameters to set the active tab
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const tabParam = urlParams.get('tab');
+    if (tabParam && ['overview', 'strategies', 'allocation', 'exits', 'stoploss', 'advanced-risk', 'risk', 'engine', 'backtest', 'config', 'api'].includes(tabParam)) {
+      setActiveTab(tabParam as any);
+    }
+  }, []);
 
   const tabs = [
     { id: "overview" as const, label: "Overview", icon: BarChart3 },

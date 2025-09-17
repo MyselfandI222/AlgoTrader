@@ -204,6 +204,10 @@ export function StrategyList() {
                         size="sm" 
                         className="flex-1"
                         data-testid={`button-backtest-${strategy.id}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          window.location.href = '/strategies?tab=backtest';
+                        }}
                       >
                         <BarChart3 size={14} className="mr-2" />
                         Backtest
@@ -213,6 +217,10 @@ export function StrategyList() {
                         size="sm" 
                         className="flex-1"
                         data-testid={`button-configure-${strategy.id}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          window.location.href = '/strategies?tab=risk';
+                        }}
                       >
                         <Settings size={14} className="mr-2" />
                         Configure
