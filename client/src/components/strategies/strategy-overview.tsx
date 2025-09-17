@@ -180,5 +180,6 @@ export function StrategyOverview() {
         </CardContent>
       </Card>
     </div>
+    </div>
   );
 }
