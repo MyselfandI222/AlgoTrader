@@ -69,10 +69,6 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Market Overview - Full width at bottom */}
-          <div className="mt-8">
-            <MarketWatch />
-          </div>
         </div>
       </main>
     </div>
