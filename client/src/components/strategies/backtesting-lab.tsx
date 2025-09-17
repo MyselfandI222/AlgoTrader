@@ -53,6 +53,7 @@ interface BacktestConfig {
 export function BacktestingLab() {
   const [isRunning, setIsRunning] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [isCompleted, setIsCompleted] = useState(false);
   const [config, setConfig] = useState<BacktestConfig>({
     strategy: "momentum",
     startDate: "2023-01-01",
@@ -158,6 +159,7 @@ export function BacktestingLab() {
   const runBacktest = () => {
     setIsRunning(true);
     setProgress(0);
+    setIsCompleted(false);
     
     // Simulate backtest progress
     const interval = setInterval(() => {
@@ -165,6 +167,9 @@ export function BacktestingLab() {
         if (prev >= 100) {
           clearInterval(interval);
           setIsRunning(false);
+          setIsCompleted(true);
+          // Auto-hide completion message after 3 seconds
+          setTimeout(() => setIsCompleted(false), 3000);
           return 100;
         }
         return prev + 10;
@@ -364,12 +369,22 @@ export function BacktestingLab() {
                 <Button 
                   onClick={runBacktest} 
                   disabled={isRunning}
-                  className="bg-blue-600 hover:bg-blue-700"
+                  className={`transition-all duration-300 ${
+                    isCompleted 
+                      ? 'bg-green-600 hover:bg-green-700' 
+                      : 'bg-blue-600 hover:bg-blue-700'
+                  }`}
+                  data-testid="run-backtest-button"
                 >
                   {isRunning ? (
                     <>
                       <Activity size={16} className="mr-2 animate-spin" />
                       Running...
+                    </>
+                  ) : isCompleted ? (
+                    <>
+                      <CheckCircle size={16} className="mr-2" />
+                      Completed
                     </>
                   ) : (
                     <>
@@ -381,17 +396,53 @@ export function BacktestingLab() {
               </div>
               
               {isRunning && (
-                <div>
+                <div className="space-y-3">
                   <div className="flex justify-between text-sm mb-2">
                     <span>Progress</span>
                     <span>{progress}%</span>
                   </div>
-                  <Progress value={progress} className="h-2" />
-                  <p className="text-xs text-gray-400 mt-2">
+                  <Progress value={progress} className="h-3" />
+                  <p className="text-xs text-gray-400">
                     Processing historical data and calculating performance metrics...
                   </p>
                 </div>
               )}
+
+              {isCompleted && (
+                <div className="bg-green-600/10 border border-green-600/30 rounded-lg p-4 animate-in fade-in duration-500">
+                  <div className="flex items-center space-x-2">
+                    <CheckCircle size={20} className="text-green-400" />
+                    <div>
+                      <h4 className="font-semibold text-green-400">Backtest Complete!</h4>
+                      <p className="text-sm text-gray-300">
+                        Strategy analysis finished. Check the Results and Analysis tabs for detailed insights.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="mt-4 p-4 bg-blue-600/10 border border-blue-600/30 rounded-lg">
+                <h4 className="font-semibold mb-2 text-blue-400">Current Configuration</h4>
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div>
+                    <span className="text-gray-400">Strategy:</span> 
+                    <span className="ml-2 font-medium">{config.strategy}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-400">Period:</span> 
+                    <span className="ml-2 font-medium">{config.startDate} to {config.endDate}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-400">Capital:</span> 
+                    <span className="ml-2 font-medium">${config.initialCapital.toLocaleString()}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-400">Benchmark:</span> 
+                    <span className="ml-2 font-medium">{config.benchmark}</span>
+                  </div>
+                </div>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
