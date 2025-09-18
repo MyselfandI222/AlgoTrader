@@ -27,6 +27,8 @@ export const users = pgTable("users", {
   emailNotifications: boolean("email_notifications").notNull().default(true),
   pushNotifications: boolean("push_notifications").notNull().default(true),
   twoFactorEnabled: boolean("two_factor_enabled").notNull().default(false),
+  twoFactorSecret: text("two_factor_secret"), // TOTP secret for 2FA
+  backupCodes: text("backup_codes").array(), // Array of backup codes for 2FA recovery
   balance: decimal("balance", { precision: 15, scale: 2 }).notNull().default("100000.00"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -135,6 +137,23 @@ export const changePasswordSchema = z.object({
 }).refine((data) => data.newPassword === data.confirmPassword, {
   message: "Passwords do not match",
   path: ["confirmPassword"],
+});
+
+// 2FA Schemas
+export const enable2FASchema = z.object({
+  token: z.string().min(6).max(6).regex(/^\d{6}$/, "Token must be 6 digits"),
+});
+
+export const verify2FASchema = z.object({
+  token: z.string().min(6).max(6).regex(/^\d{6}$/, "Token must be 6 digits"),
+});
+
+export const verifyBackupCodeSchema = z.object({
+  code: z.string().min(8).max(12).regex(/^[A-Z0-9]+$/, "Invalid backup code format"),
+});
+
+export const disable2FASchema = z.object({
+  password: z.string().min(1, "Password is required to disable 2FA"),
 });
 
 export const insertPortfolioSchema = createInsertSchema(portfolios).omit({

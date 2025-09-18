@@ -29,6 +29,12 @@ export interface IStorage {
   changePassword(userId: string, newPassword: string): Promise<boolean>;
   deleteUser(userId: string): Promise<boolean>;
 
+  // 2FA methods
+  enable2FA(userId: string, secret: string, backupCodes: string[]): Promise<User | undefined>;
+  disable2FA(userId: string): Promise<User | undefined>;
+  updateBackupCodes(userId: string, backupCodes: string[]): Promise<User | undefined>;
+  getUserFor2FA(userId: string): Promise<{ twoFactorEnabled: boolean; twoFactorSecret: string | null; backupCodes: string[] | null } | undefined>;
+
   // Portfolios
   getPortfolio(id: string): Promise<Portfolio | undefined>;
   getPortfolioByUserId(userId: string): Promise<Portfolio | undefined>;
@@ -141,6 +147,8 @@ export class MemStorage implements IStorage {
       emailNotifications: insertUser.emailNotifications !== undefined ? insertUser.emailNotifications : true,
       pushNotifications: insertUser.pushNotifications !== undefined ? insertUser.pushNotifications : true,
       twoFactorEnabled: insertUser.twoFactorEnabled !== undefined ? insertUser.twoFactorEnabled : false,
+      twoFactorSecret: insertUser.twoFactorSecret || null,
+      backupCodes: insertUser.backupCodes || null,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -172,6 +180,8 @@ export class MemStorage implements IStorage {
       emailNotifications: true,
       pushNotifications: true,
       twoFactorEnabled: false,
+      twoFactorSecret: null,
+      backupCodes: null,
       balance: "100000.00",
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -242,6 +252,61 @@ export class MemStorage implements IStorage {
     
     // Delete user
     return this.users.delete(userId);
+  }
+
+  // 2FA methods
+  async enable2FA(userId: string, secret: string, backupCodes: string[]): Promise<User | undefined> {
+    const user = this.users.get(userId);
+    if (!user) return undefined;
+
+    const updatedUser: User = {
+      ...user,
+      twoFactorEnabled: true,
+      twoFactorSecret: secret,
+      backupCodes: backupCodes,
+      updatedAt: new Date()
+    };
+    this.users.set(userId, updatedUser);
+    return updatedUser;
+  }
+
+  async disable2FA(userId: string): Promise<User | undefined> {
+    const user = this.users.get(userId);
+    if (!user) return undefined;
+
+    const updatedUser: User = {
+      ...user,
+      twoFactorEnabled: false,
+      twoFactorSecret: null,
+      backupCodes: null,
+      updatedAt: new Date()
+    };
+    this.users.set(userId, updatedUser);
+    return updatedUser;
+  }
+
+  async updateBackupCodes(userId: string, backupCodes: string[]): Promise<User | undefined> {
+    const user = this.users.get(userId);
+    if (!user) return undefined;
+
+    const updatedUser: User = {
+      ...user,
+      backupCodes: backupCodes,
+      updatedAt: new Date()
+    };
+    this.users.set(userId, updatedUser);
+    return updatedUser;
+  }
+
+  async getUserFor2FA(userId: string): Promise<{ twoFactorEnabled: boolean; twoFactorSecret: string | null; backupCodes: string[] | null } | undefined> {
+    const user = this.users.get(userId);
+    if (!user) return undefined;
+
+    return {
+      twoFactorEnabled: user.twoFactorEnabled,
+      twoFactorSecret: user.twoFactorSecret,
+      backupCodes: user.backupCodes
+    };
   }
 
   // Portfolios
