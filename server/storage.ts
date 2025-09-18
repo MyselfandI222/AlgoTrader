@@ -15,6 +15,7 @@ import {
   type InsertTransaction
 } from "@shared/schema";
 import { randomUUID } from "crypto";
+import { PasswordService } from "./services/password-service";
 
 export interface IStorage {
   // Users
@@ -133,11 +134,15 @@ export class MemStorage implements IStorage {
 
   async createUser(insertUser: InsertUser): Promise<User> {
     const id = randomUUID();
+    
+    // Hash password if provided
+    const hashedPassword = insertUser.password ? await PasswordService.hashPassword(insertUser.password) : null;
+    
     const user: User = { 
       ...insertUser, 
       id,
       username: insertUser.username || null,
-      password: insertUser.password || null,
+      password: hashedPassword,
       provider: insertUser.provider || null,
       providerId: insertUser.providerId || null,
       balance: insertUser.balance || "100000.00",
@@ -221,7 +226,9 @@ export class MemStorage implements IStorage {
     const user = this.users.get(userId);
     if (!user) return false;
 
-    const updatedUser = { ...user, password: newPassword };
+    // Hash the new password
+    const hashedPassword = await PasswordService.hashPassword(newPassword);
+    const updatedUser = { ...user, password: hashedPassword };
     this.users.set(userId, updatedUser);
     return true;
   }
@@ -259,11 +266,16 @@ export class MemStorage implements IStorage {
     const user = this.users.get(userId);
     if (!user) return undefined;
 
+    // Hash all backup codes before storing
+    const hashedBackupCodes = await Promise.all(
+      backupCodes.map(code => PasswordService.hashBackupCode(code))
+    );
+
     const updatedUser: User = {
       ...user,
       twoFactorEnabled: true,
       twoFactorSecret: secret,
-      backupCodes: backupCodes,
+      backupCodes: hashedBackupCodes,
       updatedAt: new Date()
     };
     this.users.set(userId, updatedUser);
@@ -289,9 +301,14 @@ export class MemStorage implements IStorage {
     const user = this.users.get(userId);
     if (!user) return undefined;
 
+    // Hash all backup codes before storing
+    const hashedBackupCodes = await Promise.all(
+      backupCodes.map(code => PasswordService.hashBackupCode(code))
+    );
+
     const updatedUser: User = {
       ...user,
-      backupCodes: backupCodes,
+      backupCodes: hashedBackupCodes,
       updatedAt: new Date()
     };
     this.users.set(userId, updatedUser);

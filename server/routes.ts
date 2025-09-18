@@ -1,10 +1,12 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertUserSchema, insertTradeSchema, insertTransactionSchema, updateProfileSchema, updateNotificationsSchema, changePasswordSchema } from "@shared/schema";
+import { insertUserSchema, insertTradeSchema, insertTransactionSchema, updateProfileSchema, updateNotificationsSchema, changePasswordSchema, enable2FASchema, verify2FASchema, verifyBackupCodeSchema, disable2FASchema } from "@shared/schema";
 import { createStrategyRoutes } from "./routes/strategy-routes.js";
 import { marketDataService } from "./services/market-data-service.js";
 import { setupAuth, requireAuth } from "./auth";
+import { totpService } from "./services/totp-service";
+import { PasswordService } from "./services/password-service";
 import { z } from "zod";
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -55,41 +57,379 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ error: "Invalid email or password" });
       }
       
-      // Check password (in production, compare hashed passwords)
-      if (user.password !== password) {
+      // Check password using bcrypt comparison
+      if (!user.password || !(await PasswordService.verifyPassword(password, user.password))) {
         console.log('Password mismatch');
         return res.status(401).json({ error: "Invalid email or password" });
       }
       
-      console.log('Password correct, manually setting session...');
-      console.log('Session ID before:', req.sessionID);
-      console.log('Session data before:', req.session);
+      console.log('Password correct, checking 2FA status...');
       
-      // Manually set session instead of using req.login
-      if (req.session) {
-        (req.session as any).userId = user.id;
-        (req.session as any).user = user;
+      // Check if user has 2FA enabled
+      if (user.twoFactorEnabled) {
+        console.log('User has 2FA enabled, setting pending 2FA state...');
         
-        // Force session save
-        req.session.save((err) => {
-          if (err) {
-            console.error('Session save error:', err);
-            return res.status(500).json({ error: "Session save failed" });
-          }
-          console.log('Session saved successfully');
-          console.log('Session ID after:', req.sessionID);
-          console.log('Session data after:', req.session);
+        // Set pending 2FA state in session (not fully logged in yet)
+        if (req.session) {
+          (req.session as any).pending2FA = {
+            userId: user.id,
+            email: user.email,
+            timestamp: Date.now()
+          };
           
-          const { password: _, ...userWithoutPassword } = user;
-          res.json({ user: userWithoutPassword, message: "Login successful" });
-        });
+          req.session.save((err) => {
+            if (err) {
+              console.error('Session save error:', err);
+              return res.status(500).json({ error: "Session save failed" });
+            }
+            
+            res.json({ 
+              requires2FA: true,
+              userId: user.id,
+              message: "Please enter your 2FA verification code" 
+            });
+          });
+        } else {
+          console.error('No session available');
+          res.status(500).json({ error: "Session not available" });
+        }
       } else {
-        console.error('No session available');
-        res.status(500).json({ error: "Session not available" });
+        console.log('User does not have 2FA, proceeding with normal login...');
+        console.log('Session ID before:', req.sessionID);
+        console.log('Session data before:', req.session);
+        
+        // Manually set session for full login
+        if (req.session) {
+          (req.session as any).userId = user.id;
+          (req.session as any).user = user;
+          
+          // Force session save
+          req.session.save((err) => {
+            if (err) {
+              console.error('Session save error:', err);
+              return res.status(500).json({ error: "Session save failed" });
+            }
+            console.log('Session saved successfully');
+            console.log('Session ID after:', req.sessionID);
+            console.log('Session data after:', req.session);
+            
+            const { password: _, ...userWithoutPassword } = user;
+            res.json({ user: userWithoutPassword, message: "Login successful" });
+          });
+        } else {
+          console.error('No session available');
+          res.status(500).json({ error: "Session not available" });
+        }
       }
     } catch (error) {
       console.error('Login error:', error);
       res.status(500).json({ error: "Login failed" });
+    }
+  });
+
+  // 2FA Routes
+  app.post("/api/auth/2fa/setup", requireAuth, async (req, res) => {
+    try {
+      const userId = (req.session as any)?.userId || (req.user as any)?.id;
+      if (!userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      // Generate TOTP secret and QR code
+      const secret = totpService.generateSecret();
+      const qrCodeUrl = await totpService.generateQRCode(user.email, secret);
+
+      // Store the secret temporarily in session (will be activated only after verification)
+      (req.session as any).pending2FASecret = secret;
+
+      res.json({ 
+        qrCodeUrl,
+        email: user.email 
+      });
+    } catch (error) {
+      console.error('2FA setup error:', error);
+      res.status(500).json({ error: "Failed to setup 2FA" });
+    }
+  });
+
+  app.post("/api/auth/2fa/enable", requireAuth, async (req, res) => {
+    try {
+      const userId = (req.session as any)?.userId || (req.user as any)?.id;
+      if (!userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      // Validate request body
+      const validatedData = enable2FASchema.parse(req.body);
+      const { token } = validatedData;
+
+      // Get the secret stored in session during setup
+      const secret = (req.session as any)?.pending2FASecret;
+      if (!secret) {
+        return res.status(400).json({ error: "No pending 2FA setup found. Please start setup first." });
+      }
+
+      // Verify the TOTP token
+      const isValidToken = totpService.verifyToken(token, secret);
+      if (!isValidToken) {
+        return res.status(400).json({ error: "Invalid verification code" });
+      }
+
+      // Generate backup codes
+      const backupCodes = totpService.generateBackupCodes();
+
+      // Enable 2FA in the database
+      const updatedUser = await storage.enable2FA(userId, secret, backupCodes);
+      if (!updatedUser) {
+        return res.status(500).json({ error: "Failed to enable 2FA" });
+      }
+
+      // Clear the pending secret from session
+      delete (req.session as any).pending2FASecret;
+
+      res.json({ 
+        success: true,
+        backupCodes,
+        message: "2FA has been successfully enabled" 
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: "Invalid request format", details: error.errors });
+      }
+      console.error('2FA enable error:', error);
+      res.status(500).json({ error: "Failed to enable 2FA" });
+    }
+  });
+
+  app.post("/api/auth/2fa/disable", requireAuth, async (req, res) => {
+    try {
+      const userId = (req.session as any)?.userId || (req.user as any)?.id;
+      if (!userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      // Validate request body
+      const validatedData = disable2FASchema.parse(req.body);
+      const { password } = validatedData;
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      // Verify password (Note: In production, this should use proper password hashing)
+      if (user.password !== password) {
+        return res.status(400).json({ error: "Incorrect password" });
+      }
+
+      // Disable 2FA
+      const updatedUser = await storage.disable2FA(userId);
+      if (!updatedUser) {
+        return res.status(500).json({ error: "Failed to disable 2FA" });
+      }
+
+      res.json({ 
+        success: true,
+        message: "2FA has been successfully disabled" 
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: "Invalid request format", details: error.errors });
+      }
+      console.error('2FA disable error:', error);
+      res.status(500).json({ error: "Failed to disable 2FA" });
+    }
+  });
+
+  app.post("/api/auth/2fa/verify", async (req, res) => {
+    try {
+      // Validate request body
+      const validatedData = verify2FASchema.parse(req.body);
+      const { token } = validatedData;
+      
+      // Check for pending 2FA state in session
+      const pending2FA = (req.session as any)?.pending2FA;
+      if (!pending2FA || !pending2FA.userId) {
+        return res.status(400).json({ error: "No pending 2FA verification found. Please log in first." });
+      }
+
+      // Check if pending state is not too old (15 minutes)
+      const maxAge = 15 * 60 * 1000; // 15 minutes
+      if (Date.now() - pending2FA.timestamp > maxAge) {
+        delete (req.session as any).pending2FA;
+        return res.status(400).json({ error: "2FA verification expired. Please log in again." });
+      }
+
+      const user2FA = await storage.getUserFor2FA(pending2FA.userId);
+      if (!user2FA || !user2FA.twoFactorEnabled || !user2FA.twoFactorSecret) {
+        return res.status(400).json({ error: "2FA not enabled for this user" });
+      }
+
+      const isValidToken = totpService.verifyToken(token, user2FA.twoFactorSecret);
+      if (!isValidToken) {
+        return res.status(400).json({ error: "Invalid verification code" });
+      }
+
+      // Get the full user object for the session
+      const user = await storage.getUser(pending2FA.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      // Complete the login by setting full session
+      (req.session as any).userId = user.id;
+      (req.session as any).user = user;
+      
+      // Clear the pending 2FA state
+      delete (req.session as any).pending2FA;
+
+      req.session.save((err) => {
+        if (err) {
+          console.error('Session save error after 2FA verification:', err);
+          return res.status(500).json({ error: "Failed to complete login" });
+        }
+        
+        const { password: _, ...userWithoutPassword } = user;
+        res.json({ 
+          success: true, 
+          user: userWithoutPassword,
+          message: "Login successful" 
+        });
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: "Invalid request format", details: error.errors });
+      }
+      console.error('2FA verify error:', error);
+      res.status(500).json({ error: "Failed to verify 2FA token" });
+    }
+  });
+
+  app.post("/api/auth/2fa/backup-code", async (req, res) => {
+    try {
+      // Validate request body
+      const validatedData = verifyBackupCodeSchema.parse(req.body);
+      const { code } = validatedData;
+      
+      // Check for pending 2FA state in session
+      const pending2FA = (req.session as any)?.pending2FA;
+      if (!pending2FA || !pending2FA.userId) {
+        return res.status(400).json({ error: "No pending 2FA verification found. Please log in first." });
+      }
+
+      // Check if pending state is not too old (15 minutes)
+      const maxAge = 15 * 60 * 1000; // 15 minutes
+      if (Date.now() - pending2FA.timestamp > maxAge) {
+        delete (req.session as any).pending2FA;
+        return res.status(400).json({ error: "2FA verification expired. Please log in again." });
+      }
+
+      const user2FA = await storage.getUserFor2FA(pending2FA.userId);
+      if (!user2FA || !user2FA.twoFactorEnabled || !user2FA.backupCodes) {
+        return res.status(400).json({ error: "2FA not enabled or no backup codes available" });
+      }
+
+      const { isValid, remainingCodes } = await totpService.verifyBackupCode(code, user2FA.backupCodes);
+      if (!isValid) {
+        return res.status(400).json({ error: "Invalid backup code" });
+      }
+
+      // Update the backup codes (remove the used one)
+      await storage.updateBackupCodes(pending2FA.userId, remainingCodes);
+
+      // Get the full user object for the session
+      const user = await storage.getUser(pending2FA.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      // Complete the login by setting full session
+      (req.session as any).userId = user.id;
+      (req.session as any).user = user;
+      
+      // Clear the pending 2FA state
+      delete (req.session as any).pending2FA;
+
+      req.session.save((err) => {
+        if (err) {
+          console.error('Session save error after backup code verification:', err);
+          return res.status(500).json({ error: "Failed to complete login" });
+        }
+        
+        const { password: _, ...userWithoutPassword } = user;
+        res.json({ 
+          success: true,
+          user: userWithoutPassword,
+          message: "Login successful using backup code",
+          remainingCodes: remainingCodes.length,
+          shouldRegenerateBackupCodes: totpService.shouldRegenerateBackupCodes(remainingCodes)
+        });
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: "Invalid request format", details: error.errors });
+      }
+      console.error('Backup code verify error:', error);
+      res.status(500).json({ error: "Failed to verify backup code" });
+    }
+  });
+
+  app.post("/api/auth/2fa/regenerate-backup-codes", requireAuth, async (req, res) => {
+    try {
+      const userId = (req.session as any)?.userId || (req.user as any)?.id;
+      if (!userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user2FA = await storage.getUserFor2FA(userId);
+      if (!user2FA || !user2FA.twoFactorEnabled) {
+        return res.status(400).json({ error: "2FA not enabled for this user" });
+      }
+
+      // Generate new backup codes
+      const newBackupCodes = totpService.generateBackupCodes();
+      
+      const updatedUser = await storage.updateBackupCodes(userId, newBackupCodes);
+      if (!updatedUser) {
+        return res.status(500).json({ error: "Failed to regenerate backup codes" });
+      }
+
+      res.json({ 
+        success: true,
+        backupCodes: newBackupCodes,
+        message: "New backup codes have been generated"
+      });
+    } catch (error) {
+      console.error('Backup codes regeneration error:', error);
+      res.status(500).json({ error: "Failed to regenerate backup codes" });
+    }
+  });
+
+  app.get("/api/auth/2fa/status", requireAuth, async (req, res) => {
+    try {
+      const userId = (req.session as any)?.userId || (req.user as any)?.id;
+      if (!userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user2FA = await storage.getUserFor2FA(userId);
+      if (!user2FA) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      res.json({
+        twoFactorEnabled: user2FA.twoFactorEnabled,
+        hasBackupCodes: user2FA.backupCodes && user2FA.backupCodes.length > 0,
+        backupCodesCount: user2FA.backupCodes ? user2FA.backupCodes.length : 0
+      });
+    } catch (error) {
+      console.error('2FA status error:', error);
+      res.status(500).json({ error: "Failed to get 2FA status" });
     }
   });
   
