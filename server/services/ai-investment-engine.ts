@@ -104,24 +104,24 @@ export class AIInvestmentEngine {
   private settings: AISettings;
   private marketSymbols = ['AAPL', 'TSLA', 'NVDA', 'MSFT', 'AMZN', 'GOOGL', 'META', 'NFLX', 'AMD', 'INTC', 'CRM', 'UBER', 'DIS', 'V', 'JPM', 'JNJ', 'PG', 'KO', 'PFE', 'WMT'];
   
-  // Fundamental analysis filters
+  // Fundamental analysis filters - Relaxed for better stock selection
   private fundamentalCriteria = {
-    minEpsGrowth: 15, // Minimum 15% EPS growth
-    minRoe: 15, // Minimum 15% ROE
-    minSalesGrowth: 10, // Minimum 10% sales growth
-    maxPeRatio: 30, // Maximum P/E ratio
-    maxDebtToEquity: 0.5, // Maximum debt-to-equity ratio
-    minCurrentRatio: 1.2, // Minimum current ratio for liquidity
-    minGrossMargin: 20, // Minimum gross margin percentage
+    minEpsGrowth: 5, // Minimum 5% EPS growth (was 15%)
+    minRoe: 8, // Minimum 8% ROE (was 15%)
+    minSalesGrowth: 3, // Minimum 3% sales growth (was 10%)
+    maxPeRatio: 50, // Maximum P/E ratio (was 30)
+    maxDebtToEquity: 1.0, // Maximum debt-to-equity ratio (was 0.5)
+    minCurrentRatio: 1.0, // Minimum current ratio for liquidity (was 1.2)
+    minGrossMargin: 15, // Minimum gross margin percentage (was 20)
   };
   
-  // Technical breakout criteria
+  // Technical breakout criteria - Relaxed for better stock selection
   private technicalCriteria = {
-    minVolumeIncrease: 1.5, // Volume must be 1.5x average
-    minBreakoutStrength: 2, // Breakout above resistance by 2%
-    maxRsi: 70, // Don't buy if RSI > 70 (overbought)
-    minRsi: 30, // Don't sell if RSI < 30 (oversold)
-    trendStrengthThreshold: 6, // Minimum trend strength for entry
+    minVolumeIncrease: 1.2, // Volume must be 1.2x average (was 1.5x)
+    minBreakoutStrength: 1, // Breakout above resistance by 1% (was 2%)
+    maxRsi: 80, // Don't buy if RSI > 80 (was 70, overbought)
+    minRsi: 20, // Don't sell if RSI < 20 (was 30, oversold)
+    trendStrengthThreshold: 4, // Minimum trend strength for entry (was 6)
   };
   private sectorMapping = {
     'AAPL': 'Technology',
@@ -1131,24 +1131,34 @@ export class AIInvestmentEngine {
   
   // Combined fundamental and technical screening
   private passesScreeningCriteria(fundamentals: FundamentalMetrics, technicals: TechnicalAnalysis): boolean {
-    // Fundamental criteria
-    const fundamentalPass = 
-      fundamentals.epsGrowth >= this.fundamentalCriteria.minEpsGrowth &&
-      fundamentals.roe >= this.fundamentalCriteria.minRoe &&
-      fundamentals.salesGrowth >= this.fundamentalCriteria.minSalesGrowth &&
-      fundamentals.peRatio <= this.fundamentalCriteria.maxPeRatio &&
-      fundamentals.debtToEquity <= this.fundamentalCriteria.maxDebtToEquity &&
-      fundamentals.currentRatio >= this.fundamentalCriteria.minCurrentRatio;
+    // Fundamental criteria (count how many pass)
+    const fundamentalChecks = [
+      fundamentals.epsGrowth >= this.fundamentalCriteria.minEpsGrowth,
+      fundamentals.roe >= this.fundamentalCriteria.minRoe,
+      fundamentals.salesGrowth >= this.fundamentalCriteria.minSalesGrowth,
+      fundamentals.peRatio <= this.fundamentalCriteria.maxPeRatio,
+      fundamentals.debtToEquity <= this.fundamentalCriteria.maxDebtToEquity,
+      fundamentals.currentRatio >= this.fundamentalCriteria.minCurrentRatio
+    ];
+    const fundamentalScore = fundamentalChecks.filter(Boolean).length;
+    const fundamentalPass = fundamentalScore >= 4; // At least 4 out of 6 criteria
     
-    // Technical criteria
-    const technicalPass = 
-      technicals.breakoutSignal &&
-      technicals.volumeSurge &&
-      technicals.rsi <= this.technicalCriteria.maxRsi &&
-      technicals.trendStrength >= this.technicalCriteria.trendStrengthThreshold;
+    // Technical criteria (count how many pass)
+    const technicalChecks = [
+      technicals.breakoutSignal,
+      technicals.volumeSurge,
+      technicals.rsi <= this.technicalCriteria.maxRsi && technicals.rsi >= this.technicalCriteria.minRsi,
+      technicals.trendStrength >= this.technicalCriteria.trendStrengthThreshold
+    ];
+    const technicalScore = technicalChecks.filter(Boolean).length;
+    const technicalPass = technicalScore >= 2; // At least 2 out of 4 criteria
     
-    // Both fundamental and technical criteria must pass
-    return fundamentalPass && technicalPass;
+    // Strong fundamental score (5+ criteria) OR strong technical score (3+ criteria) OR both moderate
+    const strongFundamental = fundamentalScore >= 5;
+    const strongTechnical = technicalScore >= 3;
+    const bothModerate = fundamentalPass && technicalPass;
+    
+    return strongFundamental || strongTechnical || bothModerate;
   }
   
   // Combined scoring system
